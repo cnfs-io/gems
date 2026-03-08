@@ -1,0 +1,12 @@
+[Unit]
+Description=PCS Answer File HTTP Server
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/ruby -run -e httpd /var/lib/pcs/answers -p 8100 --bind-address=0.0.0.0
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,18 @@
+---
+- id: default
+  hostname: debian
+  username: ansible
+  password: changeme
+  fullname: Ansible User
+  locale: en_US.UTF-8
+  keyboard: us
+  domain: local
+  mirror_host: deb.debian.org
+  mirror_path: /debian
+  http_proxy: ""
+  timezone: UTC
+  partitioning_method: regular
+  partitioning_recipe: atomic
+  tasksel: "standard, ssh-server"
+  packages: openssh-server curl sudo qemu-guest-agent
+  grub_device: default

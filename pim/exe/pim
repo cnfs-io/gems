@@ -1,0 +1,9 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "pim"
+
+first_arg = ARGV.find { |a| !a.start_with?('-') }
+Pim.boot! unless Pim::BOOT_SKIP_COMMANDS.include?(first_arg)
+
+Dry::CLI.new(Pim::CLI).call

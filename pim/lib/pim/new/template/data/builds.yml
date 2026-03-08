@@ -1,0 +1,11 @@
+---
+- id: default
+  profile: default
+  iso: debian-13-amd64
+  target: local
+  distro: debian
+- id: default-arm64
+  profile: default
+  iso: debian-13-arm64
+  target: local
+  distro: debian

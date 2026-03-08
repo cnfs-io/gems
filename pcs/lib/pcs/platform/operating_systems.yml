@@ -1,0 +1,29 @@
+debian-bookworm:
+  family: debian
+  version: "12"
+  codename: bookworm
+  mirror: http://deb.debian.org/debian
+  firmware_url: https://cdimage.debian.org/cdimage/firmware/bookworm/current/firmware.cpio.gz
+  preseed_format: preseed
+  installer:
+    amd64:
+      kernel_path: dists/bookworm/main/installer-amd64/current/images/netboot/debian-installer/amd64/linux
+      initrd_path: dists/bookworm/main/installer-amd64/current/images/netboot/debian-installer/amd64/initrd.gz
+    arm64:
+      kernel_path: dists/bookworm/main/installer-arm64/current/images/netboot/debian-installer/arm64/linux
+      initrd_path: dists/bookworm/main/installer-arm64/current/images/netboot/debian-installer/arm64/initrd.gz
+
+debian-trixie:
+  family: debian
+  version: "13"
+  codename: trixie
+  mirror: http://deb.debian.org/debian
+  firmware_url: https://cdimage.debian.org/cdimage/firmware/trixie/current/firmware.cpio.gz
+  preseed_format: preseed
+  installer:
+    amd64:
+      kernel_path: dists/trixie/main/installer-amd64/current/images/netboot/debian-installer/amd64/linux
+      initrd_path: dists/trixie/main/installer-amd64/current/images/netboot/debian-installer/amd64/initrd.gz
+    arm64:
+      kernel_path: dists/trixie/main/installer-arm64/current/images/netboot/debian-installer/arm64/linux
+      initrd_path: dists/trixie/main/installer-arm64/current/images/netboot/debian-installer/arm64/initrd.gz

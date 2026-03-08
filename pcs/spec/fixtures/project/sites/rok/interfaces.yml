@@ -1,0 +1,6 @@
+- id: "1"
+  mac: "88:a2:9e:a1:59:2a"
+  ip: "172.31.1.10"
+  host_id: "1"
+  network_id: "1"
+  site_id: rok

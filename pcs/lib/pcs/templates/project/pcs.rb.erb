@@ -1,0 +1,48 @@
+# PCS Project Configuration
+#
+# This file is loaded when PCS boots. It configures PCS and its dependencies.
+# Everything below the configure block is regular Ruby — set per-model
+# overrides, require additional files, etc.
+
+Pcs.configure do |config|
+  config.networking do |net|
+    net.dns_fallback_resolvers = ["1.1.1.1", "8.8.8.8"]
+  end
+
+  config.flat_record do |fr|
+    fr.backend = :yaml
+    fr.id_strategy = :integer
+    fr.hierarchy model: :site, key: :name
+  end
+
+  config.service.dnsmasq do |dns|
+    dns.proxy = true
+  end
+
+  config.service.netboot do |nb|
+    nb.image = "docker.io/netbootxyz/netbootxyz"
+    nb.ipxe_timeout = 10
+    nb.netboot_dir = Pathname.new("/opt/pcs/netboot")
+  end
+
+  config.service.proxmox do |pve|
+    pve.default_preseed_interface = "enp1s0"
+    pve.default_preseed_device = "/dev/sda"
+  end
+
+  # config.discovery do |d|
+  #   d.users = %w[root admin pi]
+  #   d.passwords = %w[changeme123! root admin raspberry]
+  # end
+
+  # Preseed defaults (used until Profile integration is complete)
+  # config.default_root_password = "changeme123!"
+  # config.default_locale = "en-us"
+  # config.default_packages = "openssh-server curl sudo"
+end
+
+# Project domain — used as default for new sites
+Pcs::Site.top_level_domain = "<%= domain %>"
+
+# Share profiles with PIM
+# Pcs::Profile.data_paths = [Pcs.root.join("../share/profiles")]

@@ -1,0 +1,4 @@
+---
+domain: sg.me.internal
+timezone: Asia/Singapore
+ssh_key: "~/.ssh/authorized_keys"

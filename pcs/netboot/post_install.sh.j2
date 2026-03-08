@@ -1,0 +1,55 @@
+#!/bin/bash
+# Post-install script for Debian systems
+# Creates ansible user and sets up SSH keys
+
+set -e
+
+echo "Starting post-install configuration..."
+
+# Add {{ preseed_user }} user to sudo group (user already exists from preseed)
+echo "Adding {{ preseed_user }} to sudo group..."
+usermod -aG sudo {{ preseed_user }}
+
+# Configure passwordless sudo for {{ preseed_user }} user
+echo "Configuring passwordless sudo..."
+echo "{{ preseed_user }} ALL=(ALL:ALL) NOPASSWD:ALL" > /etc/sudoers.d/{{ preseed_user }}
+chmod 440 /etc/sudoers.d/{{ preseed_user }}
+
+# Verify sudoers syntax
+echo "Verifying sudoers configuration..."
+visudo -c -f /etc/sudoers.d/{{ preseed_user }}
+if [ $? -ne 0 ]; then
+    echo "ERROR: Invalid sudoers configuration!"
+    exit 1
+fi
+
+# Create .ssh directory for {{ preseed_user }} user
+echo "Setting up SSH directory..."
+mkdir -p /home/{{ preseed_user }}/.ssh
+chmod 700 /home/{{ preseed_user }}/.ssh
+
+# Download authorized keys from GitHub
+echo "Downloading SSH keys from {{ preseed_authorized_key_url }}..."
+curl -fsSL "{{ preseed_authorized_key_url }}" > /home/{{ preseed_user }}/.ssh/authorized_keys
+chmod 600 /home/{{ preseed_user }}/.ssh/authorized_keys
+
+# Set proper ownership
+chown -R {{ preseed_user }}:{{ preseed_user }} /home/{{ preseed_user }}/.ssh
+
+# Configure vi mode for bash
+echo "Configuring vi mode for bash..."
+echo 'set -o vi' >> /home/{{ preseed_user }}/.bashrc
+echo 'export EDITOR=vim' >> /home/{{ preseed_user }}/.bashrc
+
+# Set proper ownership for .bashrc
+chown {{ preseed_user }}:{{ preseed_user }} /home/{{ preseed_user }}/.bashrc
+
+# Verify the setup
+echo "Verifying {{ preseed_user }} user setup..."
+id {{ preseed_user }}
+ls -la /home/{{ preseed_user }}/.ssh/
+echo "Checking bash configuration..."
+tail -3 /home/{{ preseed_user }}/.bashrc
+
+echo "Post-install configuration completed successfully!"
+echo "{{ preseed_user }} user configured with SSH key authentication and vi mode enabled."

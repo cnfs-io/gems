@@ -1,0 +1,44 @@
+# PCS managed — <%= proxy ? "Proxy" : "Full" %> DHCP + PXE boot
+<%- if proxy -%>
+# L1 remains the DHCP server. This only adds PXE boot options.
+<%- else -%>
+# dnsmasq is the DHCP server (no L1 router DHCP)
+<%- end -%>
+
+# Disable DNS (L1 handles it)
+port=0
+
+# Only listen on the servers VLAN interface
+interface=eth0
+bind-dynamic
+
+<%- if proxy -%>
+# Proxy mode — NO IP allocation, just PXE options
+dhcp-range=<%= servers_subnet_base %>,proxy,<%= netmask %>
+<%- else -%>
+# Full DHCP — allocate IPs from pool
+dhcp-range=<%= dhcp_range_start %>,<%= dhcp_range_end %>,<%= netmask %>,12h
+dhcp-option=option:router,<%= gateway %>
+dhcp-option=option:dns-server,<%= gateway %>
+<%- end -%>
+
+# TFTP next-server
+dhcp-option=66,<%= ops_ip %>
+
+# Logging for troubleshooting
+log-dhcp
+
+<%- if proxy -%>
+# PXE service — only used in proxy mode (dhcp-boot tags do not work in proxy)
+# x86 BIOS
+pxe-service=x86PC,"PCS netboot.xyz",netboot.xyz.kpxe,<%= ops_ip %>
+
+# x86_64 UEFI
+pxe-service=x86-64_EFI,"PCS netboot.xyz",netboot.xyz.efi,<%= ops_ip %>
+
+# ARM64 UEFI
+pxe-service=ARM64_EFI,"PCS netboot.xyz",netboot.xyz-arm64.efi,<%= ops_ip %>
+<%- end -%>
+
+# Boot file and TFTP server
+dhcp-boot=netboot.xyz.efi,,<%= ops_ip %>

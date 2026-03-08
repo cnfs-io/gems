@@ -1,0 +1,141 @@
+# Debian Base Preseed Configuration
+d-i debian-installer/locale string {{ preseed_locale }}
+d-i console-setup/ask_detect boolean false
+d-i keyboard-configuration/xkb-keymap select us
+
+# Mirror configuration
+d-i mirror/country string manual
+d-i mirror/http/hostname string deb.debian.org
+d-i mirror/http/directory string /debian
+d-i mirror/http/proxy string
+
+# Account setup - create user during install
+d-i passwd/root-login boolean false
+d-i passwd/make-user boolean true
+d-i passwd/user-fullname string {{ preseed_user }}
+d-i passwd/username string {{ preseed_user }}
+{% if preseed_user_password %}
+d-i passwd/user-password-crypted password {{ preseed_user_password | password_hash('sha512') }}
+{% else %}
+d-i passwd/user-password-crypted password !
+{% endif %}
+
+# Clock and time zone setup
+d-i clock-setup/utc boolean true
+d-i time/zone string {{ preseed_timezone }}
+d-i clock-setup/ntp boolean true
+
+# Remove any existing LVM configuration on the host
+d-i partman/early_command string \
+    for vg in $(vgs --noheadings -o vg_name 2>/dev/null); do \
+        vgremove -f "$vg" 2>/dev/null || true; \
+    done; \
+    for pv in $(pvs --noheadings -o pv_name 2>/dev/null); do \
+        pvremove -f "$pv" 2>/dev/null || true; \
+    done; \
+    wipefs -a /dev/nvme0n1 2>/dev/null || true; \
+    dd if=/dev/zero of=/dev/nvme0n1 bs=1M count=100 2>/dev/null || true
+
+# Partitioning configuration
+# Creates an UNUSED volume which is repurposed in the ansible playbook post install
+d-i partman-auto/method string lvm
+d-i partman-auto/disk string {{ preseed_device }}
+d-i partman-auto-lvm/guided_size string max
+d-i partman-auto-lvm/new_vg_name string pve
+d-i partman-lvm/device_remove_lvm boolean true
+d-i partman-md/device_remove_md boolean true
+d-i partman-lvm/confirm boolean true
+d-i partman-lvm/confirm_nooverwrite boolean true
+
+d-i partman-auto/expert_recipe string                         \
+      proxmox-lvm ::                                          \
+              538 538 1075 vfat                              \
+                      $primary{ }                             \
+                      $iflabel{ gpt }                         \
+                      method{ efi } format{ }                 \
+                      mountpoint{ /boot/efi }                 \
+              .                                               \
+              512 1024 1024 ext4                             \
+                      $primary{ }                             \
+                      method{ format } format{ }              \
+                      use_filesystem{ }                       \
+                      filesystem{ ext4 }                      \
+                      mountpoint{ /boot }                     \
+              .                                               \
+              200000 200000 -1 ext4                          \
+                      $primary{ }                             \
+                      method{ lvm }                           \
+                      vg_name{ pve }                          \
+              .                                               \
+              8192 8192 8192 linux-swap                      \
+                      $lvmok{ }                               \
+                      in_vg{ pve }                            \
+                      lv_name{ swap }                         \
+                      method{ swap } format{ }                \
+              .                                               \
+              90000 90000 90000 ext4                         \
+                      $lvmok{ }                               \
+                      in_vg{ pve }                            \
+                      lv_name{ root }                         \
+                      method{ format } format{ }              \
+                      use_filesystem{ }                       \
+                      filesystem{ ext4 }                      \
+                      mountpoint{ / }                         \
+              .                                               \
+              100000 100000 -1 ext4                          \
+                      $lvmok{ }                               \
+                      in_vg{ pve }                            \
+                      lv_name{ unused }                       \
+                      method{ format } format{ }              \
+                      use_filesystem{ }                       \
+                      filesystem{ ext4 }                      \
+                      mountpoint{ /unused }                   \
+              .
+
+d-i partman-partitioning/confirm_write_new_label boolean true
+d-i partman/choose_partition select finish
+d-i partman/confirm boolean true
+d-i partman/confirm_nooverwrite boolean true
+
+# GRUB installation - updated device
+d-i grub-installer/only_debian boolean true
+d-i grub-installer/bootdev string {{ preseed_device }}
+
+# Base system installation
+d-i base-installer/install-recommends boolean false
+d-i base-installer/kernel/image string linux-image-amd64
+
+# Package selection
+tasksel tasksel/first multiselect standard, ssh-server
+d-i pkgsel/include string {{ preseed_pkgsel | join(' ') }}
+d-i pkgsel/upgrade select safe-upgrade
+popularity-contest popularity-contest/participate boolean false
+
+#    in-target wget -O /tmp/post-install.sh {{ netbootxyz_http_url }}/proxmox/post-install.sh ; \
+# Finish installation
+d-i finish-install/reboot_in_progress note
+d-i preseed/late_command string \
+    in-target wget -O /tmp/post-install.sh {{ preseed_post_install_script }} ; \
+    in-target chmod +x /tmp/post-install.sh ; \
+    in-target /tmp/post-install.sh ; \
+    in-target /bin/sh -c 'echo "# Network interfaces" > /etc/network/interfaces'; \
+    in-target /bin/sh -c 'echo "" > /etc/network/interfaces'; \
+    in-target /bin/sh -c 'echo "auto lo" >> /etc/network/interfaces'; \
+    in-target /bin/sh -c 'echo "iface lo inet loopback" >> /etc/network/interfaces'; \
+    in-target /bin/sh -c 'echo "" >> /etc/network/interfaces'; \
+    in-target /bin/sh -c 'echo "iface {{ preseed_interface }} inet manual" >> /etc/network/interfaces'; \
+    in-target /bin/sh -c 'echo "" >> /etc/network/interfaces'; \
+    in-target /bin/sh -c 'echo "auto vmbr0" >> /etc/network/interfaces'; \
+    in-target /bin/sh -c 'echo "iface vmbr0 inet static" >> /etc/network/interfaces'; \
+    in-target /bin/sh -c 'echo "    address {{ preseed_ip_address }}" >> /etc/network/interfaces'; \
+    in-target /bin/sh -c 'echo "    netmask {{ preseed_netmask }}" >> /etc/network/interfaces'; \
+    in-target /bin/sh -c 'echo "    gateway {{ preseed_gateway }}" >> /etc/network/interfaces'; \
+    in-target /bin/sh -c 'echo "    bridge-ports {{ preseed_interface }}" >> /etc/network/interfaces'; \
+    in-target /bin/sh -c 'echo "    bridge-stp off" >> /etc/network/interfaces'; \
+    in-target /bin/sh -c 'echo "    bridge-fd 0" >> /etc/network/interfaces'; \
+    in-target /bin/sh -c 'echo "    dns-nameservers {{ preseed_nameservers }}" >> /etc/network/interfaces'; \
+    in-target /bin/sh -c 'echo "" >> /etc/network/interfaces'; \
+    in-target /bin/sh -c 'echo "source /etc/network/interfaces.d/*" >> /etc/network/interfaces'; \
+    in-target /bin/sh -c 'echo "{{ preseed_hostname }}" > /etc/hostname'; \
+    in-target /bin/sh -c 'echo "127.0.0.1 localhost" > /etc/hosts'; \
+    in-target /bin/sh -c 'echo "127.0.1.1 {{ preseed_hostname }}.{{ preseed_domain }} {{ preseed_hostname }}" >> /etc/hosts'

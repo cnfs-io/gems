@@ -1,0 +1,51 @@
+#!ipxe
+# PCS managed - boot menu
+# Variables ${host}, ${ip}, ${arch}, ${domain} are set by the per-MAC chainloader
+
+isset ${host} || set host unknown
+isset ${ip} || set ip dhcp
+isset ${arch} || set arch amd64
+isset ${domain} || set domain <%= domain %>
+
+set base-url http://<%= ops_ip %>:8080
+
+:start
+menu PCS Boot Menu - ${host} (${ip})
+item --gap --             --- Default ---
+item local                Boot from local HDD
+item --gap --             --- Installation ---
+item install              Debian preseed (automated) - ${host}
+item --gap --             --- Other ---
+item netbootxyz           netboot.xyz menu (tools, distros)
+item shell                iPXE shell
+item reboot               Reboot
+choose --timeout <%= ipxe_timeout %> --default local selected || goto local
+goto ${selected}
+
+:local
+echo Booting from local disks ...
+set boot_timeout 3000
+exit 0
+
+:install
+imgfree
+kernel ${base-url}/debian-installer/${arch}/linux initrd=initrd.magic auto=true priority=critical locale=en_US.UTF-8 keymap=us language=en country=US netcfg/choose_interface=auto hostname=${host} domain=${domain} preseed/url=${base-url}/${domain}/${host}.preseed.cfg preseed/interactive=false vga=788 netcfg/dhcp_timeout=60 || goto failed
+initrd ${base-url}/debian-installer/${arch}/initrd.gz || goto failed
+boot || goto failed
+
+:netbootxyz
+chain --autofree https://boot.netboot.xyz/menu.ipxe || goto start
+
+:shell
+echo Type 'exit' to return to menu
+shell
+goto start
+
+:reboot
+reboot
+
+:failed
+echo
+echo Boot failed — press any key to return to menu
+prompt
+goto start

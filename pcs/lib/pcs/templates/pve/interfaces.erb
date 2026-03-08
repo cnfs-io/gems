@@ -1,0 +1,31 @@
+auto lo
+iface lo inet loopback
+
+iface <%= servers_iface %> inet manual
+
+auto vmbr0
+iface vmbr0 inet static
+	address <%= servers_ip %>/<%= servers_prefix %>
+	gateway <%= servers_gateway %>
+	dns-nameservers <%= dns_resolvers.join(" ") %>
+	dns-search <%= domain %>
+	bridge-ports <%= servers_iface %>
+	bridge-stp off
+	bridge-fd 0
+<% extra_ifaces.each do |iface| -%>
+
+iface <%= iface %> inet manual
+<% end -%>
+<% if storage_iface -%>
+
+iface <%= storage_iface %> inet manual
+
+auto vmbr1
+iface vmbr1 inet static
+	address <%= storage_ip %>/<%= storage_prefix %>
+	bridge-ports <%= storage_iface %>
+	bridge-stp off
+	bridge-fd 0
+<% end -%>
+
+source /etc/network/interfaces.d/*

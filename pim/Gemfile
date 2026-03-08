@@ -1,0 +1,8 @@
+# frozen_string_literal: true
+
+source "https://rubygems.org"
+
+gemspec
+
+gem "flat_record", path: "../flat_record"
+gem "rest_cli", path: "../rest_cli"

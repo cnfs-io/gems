@@ -1,0 +1,19 @@
+- id: node
+  types:
+    - proxmox
+    - vmware
+  ip_base: 41
+- id: nas
+  types:
+    - truenas
+    - synology
+  ip_base: 30
+- id: kvm
+  types:
+    - pikvm
+    - glnet
+  ip_base: 21
+- id: cp
+  types:
+    - rpi
+  ip_base: 11

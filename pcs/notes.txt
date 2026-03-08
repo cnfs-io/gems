@@ -1,0 +1,13 @@
+if the pcs command checks first if it is in a project and then registers specific commands depending on whether it is in a project. is this possible? if so then:
+1. pcs new should only be available outside the project
+2. pcs version and completions should always be available
+3. all other commands shoudl only be availalbe inside a project
+
+Keeping in mind that certain commands are not available on the mac
+
+Also, the pcs host command needs to have add and remove  implemented
+
+Also, we should harmonize the short description for each of host network and site CRUD commands. there are minor inconsistencies in teh phrasing. we should standiardize on `pcs network` CRUD comments
+
+Also, `pcs host update` API allows to update all values (I suppose interactively) or just one field with a given value. We should harmonize the API between host network and site such that they all have this same API as host
+

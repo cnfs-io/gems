@@ -1,0 +1,30 @@
+#!ipxe
+
+:start
+set cls:hex 1b:5b:4a  # ANSI clear screen sequence - "^[[J"
+set cls ${cls:string}
+
+:main_menu
+clear menu
+set space:hex 20:20
+set space ${space:string}
+menu Proxmox Installation Menu
+item --gap Default:
+item local ${space} Boot from local disk
+item --gap Installation:
+item install ${space} Install Proxmox via TFTP
+set timeout {{ proxmox_netbootxyz_ipxe_timeout }}
+choose --timeout ${timeout} --default local menu || goto local
+echo ${cls}
+goto ${menu} || goto local
+
+:local
+echo Booting from local disk...
+exit 1
+
+:install
+echo Booting Debian FAI directly...
+kernel http://deb.debian.org/debian/dists/bookworm/main/installer-{{ netboot_arch }}/current/images/netboot/debian-installer/{{ netboot_arch }}/linux
+initrd http://deb.debian.org/debian/dists/bookworm/main/installer-amd64/current/images/netboot/debian-installer/amd64/initrd.gz
+imgargs linux auto=true priority=critical preseed/url={{ netbootxyz_http_url }}/proxmox/preseed-{{ preseed_hostname }}.cfg preseed/interactive=false vga=788 netcfg/dhcp_timeout=60
+boot

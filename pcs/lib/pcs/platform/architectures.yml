@@ -1,0 +1,19 @@
+amd64:
+  qemu_binary: qemu-system-x86_64
+  machine: q35
+  cpu_kvm: host
+  cpu_tcg: qemu64
+  nic_model: virtio-net-pci
+  uefi_firmware:
+  ipxe_boot_file: netboot.xyz.efi
+  pxe_service_tag: x86-64_EFI
+
+arm64:
+  qemu_binary: qemu-system-aarch64
+  machine: virt
+  cpu_kvm: host
+  cpu_tcg: cortex-a72
+  nic_model: virtio-net-pci
+  uefi_firmware: /usr/share/qemu-efi-aarch64/QEMU_EFI.fd
+  ipxe_boot_file: netboot.xyz-arm64.efi
+  pxe_service_tag: ARM64_EFI

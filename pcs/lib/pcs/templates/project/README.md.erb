@@ -1,0 +1,31 @@
+# <%= name %>
+
+PCS project for managing private cloud infrastructure.
+
+## Getting Started
+
+```bash
+# Create a site
+pcs site add <name>
+
+# Discover devices on the network
+pcs device scan
+
+# Configure a device
+pcs device set <id> hostname=myhost type=pve
+
+# Start a service
+pcs service start dnsmasq
+
+# Configure this host as control plane
+pcs cp setup
+```
+
+## Project Structure
+
+```
+pcs.rb                      # Project configuration (loaded on boot)
+data/roles.yml              # Device role definitions
+sites/<site>/site.yml       # Site-specific network config
+sites/<site>/hosts.yml      # Discovered hosts
+```

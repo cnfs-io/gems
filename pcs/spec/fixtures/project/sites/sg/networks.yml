@@ -1,0 +1,20 @@
+- id: "1"
+  name: compute
+  subnet: "172.31.1.0/24"
+  gateway: "172.31.1.1"
+  dns_resolvers:
+    - "172.31.1.1"
+    - "1.1.1.1"
+    - "8.8.8.8"
+  primary: true
+  site_id: sg
+- id: "2"
+  name: storage
+  subnet: "172.31.2.0/24"
+  gateway: "172.31.2.1"
+  dns_resolvers:
+    - "172.31.2.1"
+    - "1.1.1.1"
+    - "8.8.8.8"
+  primary: false
+  site_id: sg

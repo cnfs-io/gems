@@ -1,0 +1,28 @@
+defaults:
+   preseed_interface: "enp2s0"
+   # preseed_device: "/dev/nvme0n1"
+
+sites:
+  domain: "me.internal"
+  dns_fallback_resolvers:
+    - "1.1.1.1"
+    - "8.8.8.8"
+  ip_assignments:
+    cp: 11
+    kvm: 21
+    nas: 30
+    node: 41
+  storage_subnet_offset: 1
+
+devices:
+  node:
+    proxmox:
+    vmware:
+  nas:
+    truenas:
+    synology:
+  kvm:
+    pikvm:
+    glnet:
+  cp:
+    rpi:

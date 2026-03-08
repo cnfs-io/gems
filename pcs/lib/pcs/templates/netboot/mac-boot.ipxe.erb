@@ -1,0 +1,7 @@
+#!ipxe
+# MAC-<%= mac_stripped %>.ipxe (<%= hostname %>)
+set host <%= hostname %>
+set ip <%= ip %>
+set arch <%= arch %>
+set domain <%= domain %>
+chain --replace pcs-boot.ipxe
