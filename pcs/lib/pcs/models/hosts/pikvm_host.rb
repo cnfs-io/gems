@@ -11,14 +11,15 @@ module Pcs
       false
     end
 
-    def render(output_dir, config:)
+    def render(output_dir)
       write_local(output_dir, "/etc/systemd/network/eth0.network", render_network)
       write_local(output_dir, "/etc/hostname", fqdn + "\n")
-      write_local(output_dir, "/root/.ssh/authorized_keys", config.ssh_public_key + "\n")
+      pub_key = site.ssh_public_key_content
+      write_local(output_dir, "/root/.ssh/authorized_keys", pub_key + "\n") if pub_key
     end
 
-    def deploy!(output_dir, config:, state:)
-      with_ssh_probe(config: config, state: state) do |ssh|
+    def deploy!(output_dir, state:)
+      with_ssh_probe(state: state) do |ssh|
         ssh.exec!("rw")
         push_file(ssh, output_dir, "/etc/systemd/network/eth0.network")
         push_file(ssh, output_dir, "/etc/hostname")
@@ -29,12 +30,12 @@ module Pcs
       end
     end
 
-    def configure!(config:)
+    def configure!
       # No post-provision for PiKVM
     end
 
     def healthy?
-      with_ssh(user: "root", config: Pcs::Config.load, state: Pcs::State.load) do |ssh|
+      with_ssh(user: "root", state: Pcs::State.load) do |ssh|
         result = ssh.exec!("systemctl is-active kvmd")
         result&.strip == "active"
       end

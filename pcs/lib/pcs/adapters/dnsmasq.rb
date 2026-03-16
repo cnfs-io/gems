@@ -13,8 +13,8 @@ module Pcs
       end
 
       def self.write_config(servers_subnet:, gateway:, ops_ip:, project_name:, proxy:, system_cmd:)
-        subnet_base = servers_subnet.split("/").first
-        netmask = "255.255.255.0" # /24 assumption for spike
+        subnet_base, prefix_str = servers_subnet.split("/")
+        netmask = prefix_to_netmask(prefix_str.to_i)
         octets = subnet_base.split(".")
 
         template = TEMPLATE_PATH.read
@@ -34,6 +34,12 @@ module Pcs
       def self.reload!(system_cmd:)
         system_cmd.service("reload", "dnsmasq")
       end
+
+      def self.prefix_to_netmask(prefix_len)
+        mask = (0xFFFFFFFF << (32 - prefix_len)) & 0xFFFFFFFF
+        [mask].pack("N").unpack("C4").join(".")
+      end
+      private_class_method :prefix_to_netmask
     end
   end
 end

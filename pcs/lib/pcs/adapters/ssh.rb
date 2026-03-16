@@ -68,10 +68,10 @@ module Pcs
       # Detect host type by running strategy detection over SSH
       def self.detect_type(host_ip)
         probe(host: host_ip) do |ssh|
-          return :proxmox if Hosts::PVE.detect?(ssh)
-          return :truenas if Hosts::TrueNAS.detect?(ssh)
-          return :pikvm   if Hosts::PiKVM.detect?(ssh)
-          return :rpi     if Hosts::RPi.detect?(ssh)
+          return :proxmox if Pcs::PveHost.detect?(ssh)
+          return :truenas if Pcs::TruenasHost.detect?(ssh)
+          return :pikvm   if Pcs::PikvmHost.detect?(ssh)
+          return :rpi     if Pcs::RpiHost.detect?(ssh)
           :unknown
         end
       end

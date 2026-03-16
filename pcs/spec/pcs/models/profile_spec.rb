@@ -66,6 +66,11 @@ RSpec.describe Pcs::Profile do
     expect(profile.device).to be_nil
   end
 
+  it "does not support hash-style access" do
+    profile = described_class.all.first
+    expect(profile).not_to respond_to(:[])
+  end
+
   it "respects user-set data_paths" do
     expect(described_class.data_paths.first.to_s).to eq(shared_dir)
   end

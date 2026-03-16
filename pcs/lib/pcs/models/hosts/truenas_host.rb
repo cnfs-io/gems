@@ -11,13 +11,14 @@ module Pcs
       false
     end
 
-    def render(output_dir, config:)
-      write_local(output_dir, "/root/.ssh/authorized_keys", config.ssh_public_key + "\n")
+    def render(output_dir)
+      pub_key = site.ssh_public_key_content
+      write_local(output_dir, "/root/.ssh/authorized_keys", pub_key + "\n") if pub_key
       write_local(output_dir, "/provision.sh", render_provision_script)
     end
 
-    def deploy!(output_dir, config:, state:)
-      with_ssh_probe(config: config, state: state) do |ssh|
+    def deploy!(output_dir, state:)
+      with_ssh_probe(state: state) do |ssh|
         configure_servers_interface(ssh)
         configure_storage_interface(ssh) if interface_on(:storage)
         set_hostname_via_midclt(ssh)
@@ -26,12 +27,12 @@ module Pcs
       end
     end
 
-    def configure!(config:)
+    def configure!
       # NAS pool/dataset setup handled by nas service (Phase 4)
     end
 
     def healthy?
-      with_ssh(user: "root", config: Pcs::Config.load, state: Pcs::State.load) do |ssh|
+      with_ssh(user: "root", state: Pcs::State.load) do |ssh|
         result = ssh.exec!("midclt call system.ready")
         result&.strip == "true"
       end

@@ -7,14 +7,12 @@ module Pcs
     source "hosts"
     sti_column :type
 
-    FIELDS = %i[id mac discovered_ip compute_ip storage_ip hostname connect_as
+    FIELDS = %i[id mac discovered_ip hostname connect_as
                 type role arch status preseed_interface discovered_at last_seen_at].freeze
-    MUTABLE_FIELDS = %i[compute_ip storage_ip hostname connect_as type role arch status].freeze
+    MUTABLE_FIELDS = %i[hostname connect_as type role arch status].freeze
 
     attribute :mac, :string
     attribute :discovered_ip, :string
-    attribute :compute_ip, :string
-    attribute :storage_ip, :string
     attribute :hostname, :string
     attribute :connect_as, :string, default: "root"
     attribute :type, :string

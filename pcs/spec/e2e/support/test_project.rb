@@ -100,7 +100,6 @@ module Pcs
               "status" => "discovered",
               "connect_as" => "admin",
               "discovered_ip" => VM_STATIC_IP,
-              "compute_ip" => VM_STATIC_IP,
               "site_id" => SITE_NAME,
               "preseed_device" => "/dev/vda",
               "preseed_interface" => "eth0",
@@ -115,7 +114,6 @@ module Pcs
               "arch" => @arch,
               "status" => "provisioned",
               "discovered_ip" => OPS_IP,
-              "compute_ip" => OPS_IP,
               "site_id" => SITE_NAME,
               "discovered_at" => Time.now.iso8601,
               "last_seen_at" => Time.now.iso8601

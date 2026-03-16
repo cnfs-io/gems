@@ -138,20 +138,14 @@ module Pcs
 
         host.role     = prompt_field(prompt, host, :role)
         host.type     = prompt_field(prompt, host, :type)
-        compute_ip    = prompt_field(prompt, host, :compute_ip,
-                          default: host.ip_on(:compute) || host.discovered_ip)
         host.hostname = prompt_field(prompt, host, :hostname)
         host.arch     = prompt_field(prompt, host, :arch, default: host.arch || "amd64")
 
-        host.update(
-          compute_ip: compute_ip,
-          status: "configured"
-        )
+        host.update(status: "configured")
 
         puts "Host #{host.id} configured:"
         puts "  role:          #{host.role}"
         puts "  type:          #{host.type}"
-        puts "  compute_ip:    #{compute_ip}"
         puts "  hostname:      #{host.hostname}"
         puts "  arch:          #{host.arch}"
         puts "  status:        configured"

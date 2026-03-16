@@ -66,10 +66,6 @@ module Pcs
         resolved_attributes
       end
 
-      def [](key)
-        send(key.to_s) if respond_to?(key.to_s)
-      end
-
       def resolve(field)
         resolved_attributes[field.to_s]
       end

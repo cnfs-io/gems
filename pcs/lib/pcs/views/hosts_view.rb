@@ -13,6 +13,5 @@ module Pcs
     field_prompt :type, :select, choices: ->(host) { Pcs::Role.types_for(host.role) }
     field_prompt :arch, :select, choices: %w[amd64 arm64]
     field_prompt :hostname, :ask
-    field_prompt :compute_ip, :ask
   end
 end

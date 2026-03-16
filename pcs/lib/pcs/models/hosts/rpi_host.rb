@@ -22,15 +22,15 @@ module Pcs
       :ifupdown
     end
 
-    def render(output_dir, config:)
+    def render(output_dir)
       puts "  (ops host is self-provisioned during bootstrap)"
     end
 
-    def deploy!(output_dir, config:, state:)
+    def deploy!(output_dir, state:)
       # No-op — ops host is already configured
     end
 
-    def configure!(config:)
+    def configure!
       # No post-provision for the control plane RPi
     end
 
