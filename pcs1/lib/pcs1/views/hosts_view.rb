@@ -3,9 +3,10 @@
 module Pcs1
   class HostsView < RestCli::View
     columns       :id, :hostname, :type, :role, :status
-    detail_fields :id, :hostname, :type, :role, :arch, :status, :site_id
+    detail_fields :id, :hostname, :type, :role, :arch, :status,
+                  :connect_as, :site_id
 
-    has_many :interfaces, columns: [:name, :ip, :mac, :network_id]
+    has_many :interfaces, columns: [:name, :discovered_ip, :ip, :mac, :network_id]
 
     field_prompt :hostname, :ask
     field_prompt :role,     :ask

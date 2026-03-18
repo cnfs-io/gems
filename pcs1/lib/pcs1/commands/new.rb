@@ -13,6 +13,26 @@ module Pcs1
 
       EMPTY_YAML = "---\n[]\n"
 
+      CONFIG_TEMPLATE = <<~RUBY
+        # PCS Project Configuration
+        #
+        # This file is loaded when PCS boots from this directory.
+        # It configures host defaults and other project-level settings.
+
+        Pcs1.configure do |config|
+          # Default credentials for SSH access during host keying.
+          # These are used when connect_as / connect_password are not set on the host record.
+          # Edit these to match your environment's default credentials.
+          config.host_defaults = {
+            "pikvm"   => { user: "root", password: "root" },
+            "jetkvm"  => { user: "root", password: "root" },
+            "truenas" => { user: "root", password: "truenas" },
+            "proxmox" => { user: "root", password: "changeme123!" },
+            "rpi"     => { user: "pi",   password: "raspberry" },
+          }
+        end
+      RUBY
+
       def call(name:, **)
         root = Pathname.pwd / name
 
@@ -31,12 +51,19 @@ module Pcs1
           (data_dir / "#{file}.yml").write(EMPTY_YAML)
         end
 
+        # Write config file
+        (root / "pcs.rb").write(CONFIG_TEMPLATE)
+        puts "  Config: pcs.rb"
+
         # --- Boot FlatRecord against the new project ---
         FlatRecord.configure { |c| c.data_path = data_dir.to_s }
         Pcs1::Site.reload!
         Pcs1::Host.reload!
         Pcs1::Network.reload!
         Pcs1::Interface.reload!
+
+        # Load the config we just wrote
+        load((root / "pcs.rb").to_s)
 
         # --- Site ---
         site = create_site(prompt, name)
