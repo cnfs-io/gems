@@ -2,27 +2,6 @@
 
 require "dry/cli"
 
-# Models
-require_relative "models/site"
-require_relative "models/host"
-require_relative "models/hosts/pikvm_host"
-require_relative "models/network"
-require_relative "models/interface"
-
-# Views
-require_relative "views/sites_view"
-require_relative "views/hosts_view"
-require_relative "views/networks_view"
-require_relative "views/interfaces_view"
-
-# Commands
-require_relative "commands/console"
-require_relative "commands/new"
-require_relative "commands/sites_command"
-require_relative "commands/hosts_command"
-require_relative "commands/networks_command"
-require_relative "commands/interfaces_command"
-
 module Pcs1
   module CLI
     extend RestCli::Registry

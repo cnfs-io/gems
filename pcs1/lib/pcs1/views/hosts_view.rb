@@ -10,7 +10,7 @@ module Pcs1
 
     field_prompt :hostname, :ask
     field_prompt :role,     :ask
-    field_prompt :type,     :ask
+    field_prompt :type,     :select, choices: ->(_) { Pcs1::Host.valid_types }
     field_prompt :arch,     :select, choices: %w[amd64 arm64]
   end
 end

@@ -7,7 +7,9 @@ require_relative "pcs1/version"
 require_relative "pcs1/config"
 require_relative "pcs1/platform"
 require_relative "pcs1/application"
-require_relative "pcs1/cli"
+
+# Auto-require all Ruby files under lib/pcs1/ (models, views, commands, etc.)
+Dir.glob(File.join(__dir__, "pcs1", "**", "*.rb")).sort.each { |f| require f }
 
 module Pcs1
   class Error < StandardError; end

@@ -10,6 +10,6 @@ module Pcs1
     field_prompt :timezone, :select,
       choices: ->(_) { Pcs1::Platform.current.available_timezones },
       filter: true
-    field_prompt :ssh_key,  :ask, default: "~/.ssh/id_ed25519"
+    field_prompt :ssh_key,  :ask, default: "~/.ssh/authorized_keys"
   end
 end

@@ -20,6 +20,17 @@ module Pcs1
     belongs_to :site, class_name: "Pcs1::Site"
     has_many :interfaces, class_name: "Pcs1::Interface", foreign_key: :host_id
 
+    validates :type, inclusion: {
+      in: ->(_) { Host.valid_types },
+      message: "%{value} is not a valid host type (valid: #{-> { Host.valid_types.join(", ") }.call})"
+    }, allow_nil: true
+
+    # --- Valid types from STI subclasses ---
+
+    def self.valid_types
+      sti_types.keys
+    end
+
     # --- State machine ---
 
     state_machine :status, initial: :discovered do
