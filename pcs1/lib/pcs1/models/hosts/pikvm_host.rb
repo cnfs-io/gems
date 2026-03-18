@@ -11,6 +11,15 @@ module Pcs1
       false
     end
 
+    # PiKVM: safest to reboot — the read-only filesystem makes
+    # in-place network restart unreliable
+    def restart_networking!
+      puts "  Rebooting PiKVM #{hostname || id}..."
+      ssh_exec!("reboot")
+    rescue StandardError
+      # Expected — SSH drops on reboot
+    end
+
     protected
 
     # PiKVM has a read-only filesystem — wrap with rw/ro around base key installation

@@ -50,6 +50,10 @@ module Pcs1
       event :provision do
         transition configured: :provisioned
       end
+
+      after_transition to: :configured do |host|
+        host.site&.reconcile!
+      end
     end
 
     # --- Guards ---
@@ -106,6 +110,16 @@ module Pcs1
       connect_password || host_default(:password)
     end
 
+    # --- Config resolution (per-type defaults → global fallback) ---
+
+    def wait_attempts
+      host_default(:wait_attempts) || Pcs1.config.host.wait_attempts
+    end
+
+    def wait_interval
+      host_default(:wait_interval) || Pcs1.config.host.wait_interval
+    end
+
     # --- Local host detection ---
 
     def self.local_ips
@@ -150,6 +164,35 @@ module Pcs1
       puts "  Key pushed."
     end
 
+    # --- Provisioning ---
+
+    # Provision this host: restart networking to pick up DHCP reservation,
+    # then verify reachability at configured IP.
+    def provision!
+      configured_ip = interfaces.first&.configured_ip
+      raise "No configured IP — run 'host configure' first" unless configured_ip
+
+      puts "  Restarting networking on #{hostname || id}..."
+      restart_networking!
+
+      puts "  Waiting for host to come back (#{wait_attempts} attempts, #{wait_interval}s interval)..."
+      wait_for_host(configured_ip)
+
+      if key_access?(target: :configured_ip)
+        puts "  Verified: #{hostname || id} reachable at #{configured_ip}"
+        fire_status_event(:provision)
+        save!
+        puts "  Host #{hostname || id} provisioned."
+      else
+        raise "Host #{hostname || id} not reachable at #{configured_ip} after restart"
+      end
+    end
+
+    # Override in STI subclasses for host-specific restart behavior.
+    def restart_networking!
+      raise NotImplementedError, "#{self.class} must implement #restart_networking!"
+    end
+
     protected
 
     # Default key installation — works for most Linux hosts.
@@ -160,7 +203,42 @@ module Pcs1
       ssh.exec!("chmod 600 ~/.ssh/authorized_keys")
     end
 
+    # SSH into the host at its current reachable IP and execute a command.
+    def ssh_exec!(command)
+      target_ip = interfaces.first&.reachable_ip
+      raise "No reachable IP for host #{hostname || id}" unless target_ip
+
+      user = connect_user
+      raise "No connect_user for host #{hostname || id}" if blank?(user)
+
+      Net::SSH.start(target_ip, user,
+                     non_interactive: true,
+                     verify_host_key: :never,
+                     timeout: 10) do |ssh|
+        ssh.exec!(command)
+      end
+    end
+
+    # Wait for a host to become reachable at an IP (after reboot/restart).
+    # Reads attempts/interval from per-type config or global config.
+    def wait_for_host(ip)
+      wait_attempts.times do |i|
+        if tcp_port_open?(ip, 22)
+          puts "  Host reachable at #{ip} (attempt #{i + 1}/#{wait_attempts})"
+          return true
+        end
+        sleep wait_interval
+      end
+      raise "Host not reachable at #{ip} after #{wait_attempts * wait_interval}s"
+    end
+
     private
+
+    def tcp_port_open?(host, port, timeout: 3)
+      Socket.tcp(host, port, connect_timeout: timeout) { true }
+    rescue Errno::ECONNREFUSED, Errno::ETIMEDOUT, Errno::EHOSTUNREACH, SocketError
+      false
+    end
 
     def host_default(field)
       defaults = Pcs1.config.host_defaults[type] || {}

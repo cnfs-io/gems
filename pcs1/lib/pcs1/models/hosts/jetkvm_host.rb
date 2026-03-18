@@ -5,7 +5,6 @@ module Pcs1
     sti_type "jetkvm"
 
     def self.detect?(ssh)
-      # JetKVM identification — check for JetKVM-specific markers
       result = ssh.exec!("cat /etc/hostname 2>/dev/null")
       !result.nil? && result.strip.downcase.include?("jetkvm")
     rescue StandardError
@@ -13,7 +12,6 @@ module Pcs1
     end
 
     # JetKVM requires manual key upload via web interface.
-    # This method reminds the operator and does not attempt SSH.
     def key!
       iface = interfaces.first
       target_ip = iface&.reachable_ip || "unknown"
@@ -21,6 +19,14 @@ module Pcs1
       puts "  JetKVM key upload must be done via the web interface."
       puts "  Open https://#{target_ip}/ and upload your SSH public key."
       puts "  After uploading, verify with: host.key_access?"
+    end
+
+    # JetKVM: reboot to pick up new DHCP lease
+    def restart_networking!
+      puts "  Rebooting JetKVM #{hostname || id}..."
+      ssh_exec!("reboot")
+    rescue StandardError
+      # Expected — SSH drops on reboot
     end
   end
 end

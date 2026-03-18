@@ -19,5 +19,11 @@ module Pcs1
       path = Pathname(ssh_key).expand_path
       path.exist? ? path.read.strip : nil
     end
+
+    # Called when a host transitions to configured.
+    # Delegates to services to reconcile their state.
+    def reconcile!
+      Dnsmasq.reconcile!(exclude_ips: Host.local_ips)
+    end
   end
 end

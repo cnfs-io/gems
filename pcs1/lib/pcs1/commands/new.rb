@@ -22,6 +22,7 @@ module Pcs1
         Pcs1.configure do |config|
           # Default credentials for SSH access during host keying.
           # These are used when connect_as / connect_password are not set on the host record.
+          # Per-type overrides can also include wait_attempts and wait_interval.
           # Edit these to match your environment's default credentials.
           config.host_defaults = {
             "pikvm"   => { user: "root", password: "root" },
@@ -30,6 +31,17 @@ module Pcs1
             "proxmox" => { user: "root", password: "changeme123!" },
             "rpi"     => { user: "pi",   password: "raspberry" },
           }
+
+          # Global host provisioning settings (used when not overridden per-type above)
+          # config.host.wait_attempts = 30   # number of times to poll after reboot
+          # config.host.wait_interval = 5    # seconds between polls
+
+          # Dnsmasq DHCP configuration
+          # config.dnsmasq.config_path = "/etc/dnsmasq.d/pcs.conf"
+          # config.dnsmasq.interface = "eth0"
+          # config.dnsmasq.lease_time = "12h"
+          # config.dnsmasq.range_start_octet = 100
+          # config.dnsmasq.range_end_octet = 200
         end
       RUBY
 
