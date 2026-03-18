@@ -9,7 +9,11 @@ require_relative "pcs1/platform"
 require_relative "pcs1/application"
 
 # Auto-require all Ruby files under lib/pcs1/ (models, views, commands, etc.)
-Dir.glob(File.join(__dir__, "pcs1", "**", "*.rb")).sort.each { |f| require f }
+lib_dir = Pathname.new(__dir__).join('pcs1')
+lib_dir.children.select { |path| path.directory? }.each do |dir|
+   dir.glob('**/*.rb').each { |file| require file }
+end
+lib_dir.glob('*.rb').each { |file| require file }
 
 module Pcs1
   class Error < StandardError; end
