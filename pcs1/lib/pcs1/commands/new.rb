@@ -178,7 +178,7 @@ module Pcs1
       def create_interface(host, network, ip)
         iface = Pcs1::Interface.create(
           discovered_ip: ip,
-          ip: ip,
+          configured_ip: ip,
           host_id: host.id,
           network_id: network.id
         )

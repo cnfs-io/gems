@@ -47,13 +47,13 @@ module Pcs1
 
         iface = Pcs1::Interface.new(host_id: host.id, network_id: network.id)
 
-        iface.name = prompt_field(prompt, iface, :name)
-        iface.ip   = prompt_field(prompt, iface, :ip)
-        iface.mac  = prompt_field(prompt, iface, :mac)
+        iface.name          = prompt_field(prompt, iface, :name)
+        iface.configured_ip = prompt_field(prompt, iface, :configured_ip)
+        iface.mac           = prompt_field(prompt, iface, :mac)
 
         interface = Pcs1::Interface.create(
           name: iface.name,
-          ip: iface.ip,
+          configured_ip: iface.configured_ip,
           mac: iface.mac,
           host_id: host.id,
           network_id: network.id
@@ -82,9 +82,9 @@ module Pcs1
         else
           prompt = TTY::Prompt.new
 
-          iface.name = prompt_field(prompt, iface, :name)
-          iface.ip   = prompt_field(prompt, iface, :ip)
-          iface.mac  = prompt_field(prompt, iface, :mac)
+          iface.name          = prompt_field(prompt, iface, :name)
+          iface.configured_ip = prompt_field(prompt, iface, :configured_ip)
+          iface.mac           = prompt_field(prompt, iface, :mac)
           iface.save!
 
           view.show(iface, **view_options(options))

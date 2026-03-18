@@ -22,7 +22,7 @@ module Pcs1
 
     validates :type, inclusion: {
       in: ->(_) { Host.valid_types },
-      message: "%{value} is not a valid host type (valid: #{-> { Host.valid_types.join(", ") }.call})"
+      message: "%{value} is not a valid host type"
     }, allow_nil: true
 
     # --- Valid types from STI subclasses ---
@@ -61,9 +61,13 @@ module Pcs1
       true
     end
 
-    # Verify key-based SSH access via agent — can we log in without a password?
-    def key_access?
-      target_ip = interfaces.first&.reachable_ip
+    # Verify key-based SSH access via agent.
+    # target: symbol for which IP method to call on the interface (:reachable_ip, :configured_ip, :discovered_ip)
+    def key_access?(target: :reachable_ip)
+      iface = interfaces.first
+      return false unless iface
+
+      target_ip = iface.send(target)
       return false unless target_ip
 
       user = connect_user
@@ -87,7 +91,7 @@ module Pcs1
       return false if blank?(type)
       return false if blank?(arch)
       return false unless interfaces.any?
-      return false if interfaces.any? { |i| blank?(i.ip) }
+      return false if interfaces.any? { |i| blank?(i.configured_ip) }
       return false if interfaces.any? { |i| blank?(i.name) }
       true
     end
@@ -110,7 +114,7 @@ module Pcs1
 
     def self.local
       local_ips.each do |ip|
-        iface = Pcs1::Interface.find_by(ip: ip) ||
+        iface = Pcs1::Interface.find_by(configured_ip: ip) ||
                 Pcs1::Interface.find_by(discovered_ip: ip)
         return iface.host if iface
       end
@@ -120,7 +124,7 @@ module Pcs1
     # --- Keying ---
 
     # Push the SSH public key to this host using default credentials.
-    # Does NOT change status — call fire_status_event(:key) after verifying with key_access?
+    # Does NOT change status — fire_status_event(:key) after verifying with key_access?
     def key!
       unless ready_to_key?
         missing = []

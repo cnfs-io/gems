@@ -138,16 +138,16 @@ module Pcs1
             host.status   = "configured"
             host.save!
 
-            # Configure each interface — assign static IP and NIC name
+            # Configure each interface — assign configured IP and NIC name
             host.interfaces.each do |ifc|
               net = ifc.network
               net_name = net&.name || "unknown"
               puts
               puts "  Interface on #{net_name} (discovered: #{ifc.discovered_ip}, MAC: #{ifc.mac})"
 
-              ifc.ip   = prompt_for(prompt, iface_view, ifc, :ip,
-                           label: "  Static IP",
-                           default: ifc.discovered_ip)
+              ifc.configured_ip = prompt_for(prompt, iface_view, ifc, :configured_ip,
+                                    label: "  Static IP",
+                                    default: ifc.discovered_ip)
               ifc.name = prompt_for(prompt, iface_view, ifc, :name,
                            label: "  NIC name")
               ifc.save!
