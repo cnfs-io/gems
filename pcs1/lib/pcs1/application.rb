@@ -7,6 +7,8 @@ module Pcs1
     end
 
     def self.boot!
+      # Resolve data_dir to an absolute path via project root
+      config.data_dir = (Pcs1.root / config.data_dir).to_s
       super
       load_project_config
     end
