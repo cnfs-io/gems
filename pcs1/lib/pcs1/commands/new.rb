@@ -61,7 +61,7 @@ module Pcs1
         root = Pathname.pwd / name
 
         if root.exist?
-          warn "Error: Directory '#{name}' already exists."
+          $stderr.puts "Error: Directory '#{name}' already exists."
           exit 1
         end
 
@@ -93,18 +93,7 @@ module Pcs1
         site = create_site(prompt, name)
 
         # --- Host (this machine as CP) ---
-        hostname = `hostname -s 2>/dev/null`.strip
-        hostname = "ops1" if hostname.empty?
-        host = Pcs1::Host.create(
-          hostname: hostname,
-          role: "cp",
-          type: "debian",
-          arch: detect_arch,
-          status: "provisioned",
-          pxe_boot: false,
-          site_id: site.id
-        )
-        puts "  Host '#{hostname}' created (role: cp, type: debian, status: provisioned)"
+        host = create_cp_host(prompt, site)
 
         # --- Networks + Interfaces from local IPs ---
         ips = Pcs1::Host.local_ips
@@ -133,7 +122,9 @@ module Pcs1
         label ||= field_name.to_s.tr("_", " ").capitalize
         current = default || (record.respond_to?(field_name) ? record.send(field_name) : nil)
 
-        return tty_prompt.ask("#{label}:", default: current) unless config
+        unless config
+          return tty_prompt.ask("#{label}:", default: current)
+        end
 
         if config[:default]
           computed = config[:default].is_a?(Proc) ? config[:default].call(record) : config[:default]
@@ -171,8 +162,31 @@ module Pcs1
         site
       end
 
+      def create_cp_host(prompt, site)
+        puts
+        puts "Control plane host (this machine):"
+        host_record = Pcs1::Host.new(hostname: "cp1", role: "cp")
+
+        hostname = prompt_for(prompt, Pcs1::HostsView, host_record, :hostname, default: "cp1")
+        role     = prompt_for(prompt, Pcs1::HostsView, host_record, :role, default: "cp")
+        type     = prompt_for(prompt, Pcs1::HostsView, host_record, :type)
+        arch     = prompt_for(prompt, Pcs1::HostsView, host_record, :arch, default: detect_arch)
+
+        host = Pcs1::Host.create(
+          hostname: hostname,
+          role: role,
+          type: type,
+          arch: arch,
+          status: "provisioned",
+          pxe_boot: false,
+          site_id: site.id
+        )
+        puts "  Host '#{hostname}' created (role: #{role}, type: #{type}, status: provisioned)"
+        host
+      end
+
       def create_network_for_ip(prompt, site, ip, index)
-        default_name = index.zero? ? "compute" : "network#{index}"
+        default_name = index == 0 ? "compute" : "network#{index}"
         default_subnet = subnet_from_ip(ip)
         default_gateway = gateway_from_ip(ip)
 
@@ -182,8 +196,8 @@ module Pcs1
         subnet  = prompt_for(prompt, Pcs1::NetworksView, net_record, :subnet, default: default_subnet)
         gateway = prompt_for(prompt, Pcs1::NetworksView, net_record, :gateway, default: default_gateway)
         dns_input = prompt_for(prompt, Pcs1::NetworksView, net_record, :dns_resolvers,
-                               label: "DNS resolvers (comma-separated)",
-                               default: "#{gateway}, 1.1.1.1")
+                      label: "DNS resolvers (comma-separated)",
+                      default: "#{gateway}, 1.1.1.1")
         dns_resolvers = dns_input.split(",").map(&:strip)
 
         network = Pcs1::Network.create(
@@ -191,7 +205,7 @@ module Pcs1
           subnet: subnet,
           gateway: gateway,
           dns_resolvers: dns_resolvers,
-          primary: index.zero?,
+          primary: index == 0,
           site_id: site.id
         )
         puts "  Network '#{name}' created (#{subnet})"

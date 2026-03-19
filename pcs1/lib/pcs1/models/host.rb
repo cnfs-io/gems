@@ -56,7 +56,6 @@ module Pcs1
 
     # --- Identity ---
 
-    # Is this host the machine we're currently running on?
     def local?
       local_ips = self.class.local_ips
       interfaces.any? { |i| local_ips.include?(i.configured_ip) || local_ips.include?(i.discovered_ip) }
@@ -64,8 +63,6 @@ module Pcs1
 
     # --- PXE ---
 
-    # Is this host a PXE boot target?
-    # Requires: operator marked it for PXE, it's not the local machine, and its type provides boot files.
     def pxe_target?
       pxe_boot && !local? && !boot_menu_entry.nil?
     end
@@ -75,8 +72,7 @@ module Pcs1
     def ready_to_key?
       return false if blank?(connect_user)
       return false if blank?(connect_pass)
-      return false unless interfaces.any?(&:reachable_ip)
-
+      return false unless interfaces.any? { |i| i.reachable_ip }
       true
     end
 
@@ -110,7 +106,6 @@ module Pcs1
       return false unless interfaces.any?
       return false if interfaces.any? { |i| blank?(i.configured_ip) }
       return false if interfaces.any? { |i| blank?(i.name) }
-
       true
     end
 
@@ -170,7 +165,7 @@ module Pcs1
         missing = []
         missing << "connect_user" if blank?(connect_user)
         missing << "connect_password" if blank?(connect_pass)
-        missing << "reachable interface" unless interfaces.any?(&:reachable_ip)
+        missing << "reachable interface" unless interfaces.any? { |i| i.reachable_ip }
         raise "Cannot key host #{hostname || id}: missing #{missing.join(", ")}"
       end
 
@@ -202,14 +197,14 @@ module Pcs1
       Pcs1.logger.info("Waiting for host to come back (#{wait_attempts} attempts, #{wait_interval}s interval)...")
       wait_for_host(configured_ip)
 
-      unless key_access?(target: :configured_ip)
+      if key_access?(target: :configured_ip)
+        Pcs1.logger.info("Verified: #{hostname || id} reachable at #{configured_ip}")
+        fire_status_event(:provision)
+        save!
+        Pcs1.logger.info("Host #{hostname || id} provisioned.")
+      else
         raise "Host #{hostname || id} not reachable at #{configured_ip} after restart"
       end
-
-      Pcs1.logger.info("Verified: #{hostname || id} reachable at #{configured_ip}")
-      fire_status_event(:provision)
-      save!
-      Pcs1.logger.info("Host #{hostname || id} provisioned.")
     end
 
     def restart_networking!

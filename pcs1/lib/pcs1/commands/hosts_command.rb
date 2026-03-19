@@ -135,10 +135,14 @@ module Pcs1
             host.role     = prompt_field(prompt, host, :role)
             host.type     = prompt_field(prompt, host, :type)
             host.arch     = prompt_field(prompt, host, :arch)
-            host.status   = "configured"
+
+            pxe = prompt.yes?("PXE boot this host?", default: false)
+            host.pxe_boot = pxe
+
+            host.status = "configured"
             host.save!
 
-            # Configure each interface — assign configured IP and NIC name
+            # Configure each interface
             host.interfaces.each do |ifc|
               net = ifc.network
               net_name = net&.name || "unknown"
@@ -163,7 +167,7 @@ module Pcs1
 
         remaining = Pcs1::Host.all.count { |h| h.status == "discovered" }
         if remaining.positive?
-          puts "#{remaining} host(s) still discovered. Run 'pcs1 host configure' again to configure them."
+          puts "#{remaining} host(s) still discovered. Run 'pcs1 host configure' again."
         else
           puts "All hosts configured."
         end
@@ -194,6 +198,209 @@ module Pcs1
         else
           tty_prompt.ask("#{label}:", default: current)
         end
+      end
+    end
+
+    class Provision < self
+      desc "Provision a configured host (verify networking at configured IP)"
+
+      argument :id, required: false, desc: "Host ID"
+
+      def call(id: nil, **options)
+        host = select_host(id, status: "configured")
+
+        puts "Provisioning #{host.hostname} (#{host.type})..."
+        puts
+
+        host.provision!
+
+        puts
+        view.show(Host.find(host.id), **view_options(options))
+      rescue StandardError => e
+        warn "Error: #{e.message}"
+        exit 1
+      end
+
+      private
+
+      def select_host(id, status:)
+        return Pcs1::Host.find(id.to_s) if id
+
+        prompt = TTY::Prompt.new
+        hosts = Pcs1::Host.all.select { |h| h.status == status }
+
+        if hosts.empty?
+          warn "No #{status} hosts to provision."
+          exit 1
+        end
+
+        choices = hosts.map { |h| { name: "#{h.id}: #{h.hostname} (#{h.type})", value: h } }
+        prompt.select("Select host to provision:", choices)
+      end
+    end
+
+    class Install < self
+      desc "Install OS on a PXE-bootable host"
+
+      argument :id, required: false, desc: "Host ID"
+
+      def call(id: nil, **options)
+        host = select_host(id)
+
+        unless host.pxe_target?
+          warn "Error: Host #{host.hostname} is not a PXE target."
+          warn "  pxe_boot: #{host.pxe_boot}, type: #{host.type}, local: #{host.local?}"
+          exit 1
+        end
+
+        puts "Installing OS on #{host.hostname} (#{host.type})..."
+        puts
+
+        # Ensure services are running
+        ensure_services_running
+
+        # Generate PXE files
+        Pcs1.site.reconcile!
+        puts
+
+        # Guide the operator
+        iface = host.interfaces.first
+        puts "PXE boot files generated for #{host.hostname}."
+        puts
+        puts "Next steps:"
+        puts "  1. Set #{host.hostname} to boot from network (PXE/UEFI)"
+        puts "  2. Reboot the host — it will PXE boot and install #{host.type} automatically"
+        puts "  3. Wait for the install to complete and the host to reboot"
+        puts
+        puts "Waiting for #{host.hostname} to come online at #{iface&.configured_ip}..."
+        puts "(Press Ctrl-C to cancel and verify manually later)"
+        puts
+
+        begin
+          host.send(:wait_for_host, iface.configured_ip)
+
+          if host.key_access?(target: :configured_ip)
+            Pcs1.logger.info("Verified: #{host.hostname} reachable at #{iface.configured_ip}")
+            host.fire_status_event(:provision)
+            host.save!
+            puts
+            puts "#{host.hostname} installed and provisioned."
+          else
+            puts
+            puts "Host came online but SSH key access failed."
+            puts "Verify manually with: pcs1 console → host.key_access?(target: :configured_ip)"
+          end
+        rescue Interrupt
+          puts
+          puts "Cancelled. Run 'pcs1 host provision #{host.id}' to verify later."
+        rescue StandardError => e
+          puts
+          puts "Host not yet online: #{e.message}"
+          puts "The install may still be running. Check again with:"
+          puts "  pcs1 host provision #{host.id}"
+        end
+
+        puts
+        view.show(Host.find(host.id), **view_options(options))
+      rescue FlatRecord::RecordNotFound
+        warn "Error: Host #{id} not found."
+        exit 1
+      end
+
+      private
+
+      def select_host(id)
+        return Pcs1::Host.find(id.to_s) if id
+
+        prompt = TTY::Prompt.new
+        hosts = Pcs1::Host.all.select(&:pxe_target?)
+
+        if hosts.empty?
+          warn "No PXE-bootable hosts found."
+          warn "Configure hosts with pxe_boot: true using 'pcs1 host configure'."
+          exit 1
+        end
+
+        choices = hosts.map { |h| { name: "#{h.id}: #{h.hostname} (#{h.type})", value: h } }
+        prompt.select("Select host to install:", choices)
+      end
+
+      def ensure_services_running
+        if Dnsmasq.status != "active"
+          puts "Starting dnsmasq..."
+          Dnsmasq.start!
+        end
+
+        if Netboot.status == "stopped"
+          puts "Starting netboot..."
+          Netboot.start!
+        end
+      end
+    end
+
+    class Upgrade < self
+      desc "Upgrade a provisioned host to a new type (e.g., debian → proxmox)"
+
+      argument :id, required: false, desc: "Host ID"
+      argument :type, required: false, desc: "New host type (e.g., proxmox)"
+
+      def call(id: nil, type: nil, **options)
+        host = select_host(id)
+        type = select_type(type, host)
+
+        puts "Upgrading #{host.hostname} from #{host.type} to #{type}..."
+        puts
+
+        # Change the STI type
+        host = host.becomes!(type)
+
+        # Run type-specific upgrade if available
+        if host.respond_to?(:install_pve!) && type == "proxmox"
+          host.install_pve!
+        end
+
+        puts
+        view.show(Host.find(host.id), **view_options(options))
+      rescue ArgumentError => e
+        warn "Error: #{e.message}"
+        exit 1
+      rescue FlatRecord::RecordNotFound
+        warn "Error: Host #{id} not found."
+        exit 1
+      rescue StandardError => e
+        warn "Error: #{e.message}"
+        exit 1
+      end
+
+      private
+
+      def select_host(id)
+        return Pcs1::Host.find(id.to_s) if id
+
+        prompt = TTY::Prompt.new
+        hosts = Pcs1::Host.all.select { |h| h.status == "provisioned" }
+
+        if hosts.empty?
+          warn "No provisioned hosts to upgrade."
+          exit 1
+        end
+
+        choices = hosts.map { |h| { name: "#{h.id}: #{h.hostname} (#{h.type})", value: h } }
+        prompt.select("Select host to upgrade:", choices)
+      end
+
+      def select_type(type, host)
+        return type if type && Host.valid_types.include?(type)
+
+        prompt = TTY::Prompt.new
+        available = Host.valid_types - [host.type]
+
+        if available.empty?
+          warn "No other host types available."
+          exit 1
+        end
+
+        prompt.select("Upgrade to:", available)
       end
     end
 

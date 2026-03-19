@@ -26,6 +26,9 @@ module Pcs1
       register "host add",       HostsCommand::Add
       register "host update",    HostsCommand::Update
       register "host configure", HostsCommand::Configure
+      register "host provision", HostsCommand::Provision
+      register "host install",   HostsCommand::Install
+      register "host upgrade",   HostsCommand::Upgrade
       register "host remove",    HostsCommand::Remove, aliases: ["rm"]
 
       # Networks
@@ -42,6 +45,12 @@ module Pcs1
       register "interface add",    InterfacesCommand::Add
       register "interface update", InterfacesCommand::Update
       register "interface remove", InterfacesCommand::Remove, aliases: ["rm"]
+
+      # Services
+      register "service start",   ServiceCommand::Start
+      register "service stop",    ServiceCommand::Stop
+      register "service status",  ServiceCommand::Status
+      register "service restart", ServiceCommand::Restart
 
       # Templates
       register "template list",      TemplatesCommand::List, aliases: ["ls"]
