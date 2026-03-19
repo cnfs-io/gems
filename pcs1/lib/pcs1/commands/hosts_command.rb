@@ -157,6 +157,8 @@ module Pcs1
               ifc.save!
             end
 
+            Pcs1.site.reconcile!
+
             puts
             view.show(host, **view_options(options))
           else

@@ -55,7 +55,9 @@ module Pcs1
 
       def call(name:, **)
         svc = resolve_service(name)
-        if svc.respond_to?(:restart!)
+        if svc.respond_to?(:reconcile!)
+          svc.reconcile!
+        elsif svc.respond_to?(:restart!)
           svc.restart!
         else
           svc.stop!
