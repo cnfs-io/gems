@@ -14,11 +14,11 @@ require_relative "pcs1/platform"
 require_relative "pcs1/application"
 
 # Auto-require all Ruby files under lib/pcs1/ (models, views, commands, etc.)
-lib_dir = Pathname.new(__dir__).join('pcs1')
-lib_dir.children.select { |path| path.directory? }.each do |dir|
-  dir.glob('**/*.rb').each { |file| require file }
+lib_dir = Pathname.new(__dir__).join("pcs1")
+lib_dir.children.select(&:directory?).each do |dir|
+  dir.glob("**/*.rb").each { |file| require file }
 end
-lib_dir.glob('*.rb').each { |file| require file }
+lib_dir.glob("*.rb").each { |file| require file }
 
 module Pcs1
   class Error < StandardError; end
@@ -76,8 +76,6 @@ module Pcs1
     end.sort
   end
 
-  private
-
   def self.resolve_site
     host = Host.local
     host&.site
@@ -87,8 +85,10 @@ module Pcs1
     dir = Pathname.pwd
     loop do
       return dir if (dir / PROJECT_MARKER).exist?
+
       parent = dir.parent
       return Pathname.pwd if parent == dir
+
       dir = parent
     end
   end

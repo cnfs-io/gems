@@ -2,9 +2,9 @@
 
 module Pcs1
   class HostsView < RestCli::View
-    columns       :id, :hostname, :type, :role, :status
+    columns       :id, :hostname, :type, :role, :status, :pxe_boot
     detail_fields :id, :hostname, :type, :role, :arch, :status,
-                  :connect_as, :site_id
+                  :pxe_boot, :connect_as, :site_id
 
     has_many :interfaces, columns: %i[name discovered_ip configured_ip mac network_id]
 

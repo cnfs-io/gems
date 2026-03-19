@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "pathname"
-
 module Pcs1
   class Site < FlatRecord::Base
     source "sites"
@@ -24,9 +22,8 @@ module Pcs1
     # Called when a host transitions to configured.
     # Delegates to services to reconcile their state.
     def reconcile!
-      local_ips = Host.local_ips
-      Dnsmasq.reconcile!(exclude_ips: local_ips)
-      Netboot.reconcile!(exclude_ips: local_ips)
+      Dnsmasq.reconcile!
+      Netboot.reconcile!
     end
   end
 end

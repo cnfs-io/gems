@@ -1,8 +1,6 @@
 # frozen_string_literal: true
 
 require "tty-prompt"
-require "pathname"
-require "fileutils"
 
 module Pcs1
   module Commands
@@ -30,7 +28,6 @@ module Pcs1
             "truenas" => { user: "root", password: "truenas" },
             "debian"  => { user: "root", password: "changeme123!" },
             "proxmox" => { user: "root", password: "changeme123!" },
-            "rpi"     => { user: "pi",   password: "raspberry" },
           }
 
           # Global host provisioning settings (used when not overridden per-type above)
@@ -101,12 +98,13 @@ module Pcs1
         host = Pcs1::Host.create(
           hostname: hostname,
           role: "cp",
-          type: "rpi",
+          type: "debian",
           arch: detect_arch,
-          status: "configured",
+          status: "provisioned",
+          pxe_boot: false,
           site_id: site.id
         )
-        puts "  Host '#{hostname}' created (role: cp)"
+        puts "  Host '#{hostname}' created (role: cp, type: debian, status: provisioned)"
 
         # --- Networks + Interfaces from local IPs ---
         ips = Pcs1::Host.local_ips

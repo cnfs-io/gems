@@ -3,8 +3,8 @@
 module Pcs1
   class Dnsmasq < Service
     # Reconcile: render config from current data, diff against disk, restart if changed.
-    def self.reconcile!(exclude_ips: [])
-      new_config = render_config(exclude_ips: exclude_ips)
+    def self.reconcile!
+      new_config = render_config
       config_path = Pathname(Pcs1.config.dnsmasq.config_path)
 
       current_config = config_path.exist? ? config_path.read : ""
@@ -41,7 +41,7 @@ module Pcs1
       capture("systemctl is-active dnsmasq").then { |r| r.empty? ? "unknown" : r }
     end
 
-    def self.render_config(exclude_ips: [])
+    def self.render_config
       site = Pcs1.site
       dnsmasq_config = Pcs1.config.dnsmasq
       netboot_config = Pcs1.config.netboot
@@ -49,14 +49,9 @@ module Pcs1
 
       raise "No primary network configured" unless network
 
-      cp_host = site.hosts.detect { |h| h.role == "cp" }
-      raise "No control plane host found" unless cp_host
-
-      cp_iface = cp_host.interfaces.first
-      raise "Control plane host has no interface" unless cp_iface
-
-      ops_ip = cp_iface.reachable_ip
-      raise "Control plane host has no IP" unless ops_ip
+      # Find the local host's IP on this network — this is the TFTP/DHCP server
+      ops_ip = ops_ip_for(network)
+      raise "No local host interface found on primary network" unless ops_ip
 
       subnet_base, prefix_str = network.subnet.split("/")
       prefix_len = prefix_str.to_i
@@ -68,7 +63,7 @@ module Pcs1
       gateway = network.gateway
       dns_servers = (network.dns_resolvers || [gateway]).join(",")
 
-      reservations = build_reservations(site, exclude_ips: exclude_ips)
+      reservations = build_reservations(network)
 
       render_template("dnsmasq.conf.erb",
                       interface: dnsmasq_config.interface,
@@ -85,25 +80,32 @@ module Pcs1
                       reservations: reservations)
     end
 
-    def self.build_reservations(site, exclude_ips: [])
+    # Build reservations by iterating the network's interfaces.
+    def self.build_reservations(network)
       reservations = []
 
-      site.hosts.each do |host|
-        next unless host.hostname
+      network.interfaces.each do |iface|
+        next unless iface.mac && iface.configured_ip
 
-        host.interfaces.each do |iface|
-          next unless iface.mac && iface.configured_ip
-          next if exclude_ips.include?(iface.configured_ip)
+        host = iface.host
+        next unless host&.hostname
 
-          reservations << {
-            mac: iface.mac,
-            ip: iface.configured_ip,
-            hostname: host.hostname
-          }
-        end
+        reservations << {
+          mac: iface.mac,
+          ip: iface.configured_ip,
+          hostname: host.hostname
+        }
       end
 
       reservations
+    end
+
+    # Find the local host's configured IP on a given network.
+    def self.ops_ip_for(network)
+      network.interfaces.each do |iface|
+        return iface.configured_ip if iface.host&.local?
+      end
+      nil
     end
 
     def self.prefix_to_netmask(prefix_len)

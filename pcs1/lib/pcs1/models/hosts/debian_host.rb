@@ -9,14 +9,14 @@ module Pcs1
     # discovered → configured directly (skip keyed).
     state_machine :status do
       event :configure do
-        transition [:discovered, :keyed] => :configured, if: :configuration_complete?
+        transition %i[discovered keyed] => :configured, if: :configuration_complete?
       end
     end
 
     # Keying is a no-op for PXE targets — keys come from preseed.
     # If the host is already running Debian (not PXE), the base key! works.
     def key!
-      if status == "discovered"
+      if status == "discovered" && pxe_boot
         Pcs1.logger.info("Debian PXE target — SSH keys will be installed via preseed.")
         Pcs1.logger.info("Skipping key push. Configure this host to proceed.")
         return
@@ -25,9 +25,29 @@ module Pcs1
       super
     end
 
+    # Restart networking using system commands.
+    # Tries nmcli first (NetworkManager, used on RPi Trixie), falls back to systemctl,
+    # then reboots as last resort.
     def restart_networking!
       Pcs1.logger.info("Restarting networking on #{hostname || id}...")
+
+      # Try NetworkManager first (RPi Trixie, etc.)
+      result = ssh_exec!("command -v nmcli > /dev/null 2>&1 && nmcli networking off && nmcli networking on && echo 'nmcli_ok' || echo 'nmcli_fail'")
+      if result&.strip == "nmcli_ok"
+        Pcs1.logger.info("Networking restarted via nmcli.")
+        return
+      end
+
+      # Try systemd-networkd
+      result = ssh_exec!("systemctl is-active systemd-networkd > /dev/null 2>&1 && networkctl reconfigure --all && echo 'networkctl_ok' || echo 'networkctl_fail'")
+      if result&.strip == "networkctl_ok"
+        Pcs1.logger.info("Networking restarted via networkctl.")
+        return
+      end
+
+      # Try ifupdown (traditional Debian)
       ssh_exec!("systemctl restart networking")
+      Pcs1.logger.info("Networking restarted via systemctl.")
     rescue StandardError
       Pcs1.logger.warn("Networking restart failed, rebooting...")
       begin
@@ -54,15 +74,18 @@ module Pcs1
       return unless network
 
       iface = interfaces.first
-      base_url = "http://#{cp_ops_ip}:#{Pcs1.config.netboot.http_port}/#{site.domain}"
+      ops_ip = Dnsmasq.ops_ip_for(network)
+      return unless ops_ip
+
+      base_url = "http://#{ops_ip}:#{Pcs1.config.netboot.http_port}/#{site.domain}"
 
       vars = preseed_vars(site, network, iface, base_url)
 
       write_template("debian/preseed.cfg.erb", output_dir / "#{hostname}.preseed.cfg", vars)
       write_template("debian/post-install.sh.erb", output_dir / "#{hostname}.install.sh", {
-        hostname: hostname,
-        domain: site.domain || "local"
-      })
+                       hostname: hostname,
+                       domain: site.domain || "local"
+                     })
     end
 
     def kernel_params(base_url:)
@@ -116,12 +139,6 @@ module Pcs1
 
     def preseed_device
       "/dev/sda"
-    end
-
-    def cp_ops_ip
-      cp = site.hosts.detect { |h| h.role == "cp" }
-      return nil unless cp
-      cp.interfaces.first&.reachable_ip
     end
 
     def write_template(relative_path, output_path, vars)

@@ -12,9 +12,9 @@ module Pcs1
 
     # --- Lifecycle ---
 
-    def self.reconcile!(exclude_ips: [])
+    def self.reconcile!
       ensure_dirs
-      generate_all(exclude_ips: exclude_ips)
+      generate_all
     end
 
     def self.start!
@@ -28,7 +28,7 @@ module Pcs1
       end
 
       ensure_dirs
-      generate_all(exclude_ips: Host.local_ips)
+      generate_all
 
       image = config.image
       unless system("sudo podman image exists #{image} 2>/dev/null")
@@ -67,25 +67,25 @@ module Pcs1
 
     # --- File generation ---
 
-    def self.generate_all(exclude_ips: [])
+    def self.generate_all
       site = Pcs1.site
       config = Pcs1.config.netboot
+      network = site.networks.detect(&:primary)
 
-      cp_host = site.hosts.detect { |h| h.role == "cp" }
-      return logger.warn("netboot: no CP host found, skipping generation") unless cp_host
+      return logger.warn("netboot: no primary network, skipping generation") unless network
 
-      ops_ip = cp_host.interfaces.first&.reachable_ip
-      return logger.warn("netboot: CP has no IP, skipping generation") unless ops_ip
+      # Find the local host's IP on this network for base URLs
+      ops_ip = Dnsmasq.ops_ip_for(network)
+      return logger.warn("netboot: no local host on primary network, skipping generation") unless ops_ip
 
       domain = site.domain || "local"
 
+      # Find PXE-bootable hosts
       pxe_hosts = site.hosts.select do |h|
         h.pxe_target? &&
-          h.status == "configured" &&
           h.hostname &&
           h.interfaces.any? { |i| i.mac && i.configured_ip }
       end
-      pxe_hosts.reject! { |h| h.interfaces.any? { |i| exclude_ips.include?(i.configured_ip) } }
 
       copy_ssh_key(site, domain)
 

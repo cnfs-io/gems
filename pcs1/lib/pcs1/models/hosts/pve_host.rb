@@ -50,13 +50,11 @@ module Pcs1
       Pcs1.logger.info("Waiting for PVE to come back...")
       wait_for_host(target_ip)
 
-      if pve_install_verified?
-        fire_pve_status_event(:install_pve)
-        save!
-        Pcs1.logger.info("Proxmox VE installed on #{hostname}.")
-      else
-        raise "PVE installation verification failed on #{hostname}"
-      end
+      raise "PVE installation verification failed on #{hostname}" unless pve_install_verified?
+
+      fire_pve_status_event(:install_pve)
+      save!
+      Pcs1.logger.info("Proxmox VE installed on #{hostname}.")
     end
 
     # --- Cluster operations ---
@@ -159,7 +157,7 @@ module Pcs1
       lines << "#{target_ip} #{hostname}.#{domain} #{hostname}"
 
       site&.hosts&.each do |peer|
-        next if peer.id == self.id
+        next if peer.id == id
         next unless peer.type == "proxmox" && peer.hostname
 
         peer_ip = peer.interfaces.first&.configured_ip
@@ -168,7 +166,7 @@ module Pcs1
         lines << "#{peer_ip} #{peer.hostname}.#{domain} #{peer.hostname}"
       end
 
-      lines.join("\n") + "\n"
+      "#{lines.join("\n")}\n"
     end
 
     def render_script(relative_path, vars)
