@@ -11,5 +11,5 @@ gem "rspec", "~> 3.0"
 
 gem "rubocop", "~> 1.21"
 
-gem "flat_record", path: "/Users/roberto/.local/share/gems-source/rjayroach/flat_record"
-gem "rest_cli", path: "/Users/roberto/.local/share/gems-source/rjayroach/rest_cli"
+gem "flat_record", path: File.expand_path("~/.local/share/gems-source/rjayroach/flat_record")
+gem "rest_cli", path: File.expand_path("~/.local/share/gems-source/rjayroach/rest_cli")
