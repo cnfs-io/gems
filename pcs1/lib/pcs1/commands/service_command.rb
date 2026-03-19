@@ -2,10 +2,12 @@
 
 module Pcs1
   class ServiceCommand < RestCli::Command
-    SERVICES = {
-      "dnsmasq" => Pcs1::Dnsmasq,
-      "netboot" => Pcs1::Netboot
-    }.freeze
+    def self.services
+      @services ||= {
+        "dnsmasq" => Pcs1::Dnsmasq,
+        "netboot" => Pcs1::Netboot
+      }.freeze
+    end
 
     class Start < self
       desc "Start a service"
@@ -39,7 +41,7 @@ module Pcs1
           svc = resolve_service(name)
           puts "#{name}: #{svc.status}"
         else
-          SERVICES.each do |svc_name, svc_class|
+          self.class.services.each do |svc_name, svc_class|
             puts "#{svc_name}: #{svc_class.status}"
           end
         end
@@ -65,9 +67,9 @@ module Pcs1
     private
 
     def resolve_service(name)
-      svc = SERVICES[name]
+      svc = self.class.services[name]
       unless svc
-        warn "Unknown service '#{name}'. Available: #{SERVICES.keys.join(", ")}"
+        warn "Unknown service '#{name}'. Available: #{self.class.services.keys.join(", ")}"
         exit 1
       end
       svc

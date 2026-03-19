@@ -1,24 +1,27 @@
 # frozen_string_literal: true
 
 require "erb"
+require "pathname"
+require "logger"
+
 require "flat_record"
 require "net/ssh"
 require "rest_cli"
 require "state_machines"
 require "state_machines-activemodel"
-require "pathname"
-require "logger"
-require_relative "pcs1/version"
-require_relative "pcs1/config"
-require_relative "pcs1/platform"
-require_relative "pcs1/application"
 
-# Auto-require all Ruby files under lib/pcs1/ (models, views, commands, etc.)
 lib_dir = Pathname.new(__dir__).join("pcs1")
-lib_dir.children.select(&:directory?).each do |dir|
+
+# Auto-require all Ruby files under commands/
+dir = lib_dir.join('commands').glob("**/*.rb").each { |file| require file }
+
+# Auto-require all Ruby files in lib dir
+lib_dir.glob("*.rb").each { |file| require file }
+
+# Auto-require all Ruby files under lib/pcs1/{models,views,etc.} except commands
+lib_dir.children.select(&:directory?).reject{ |p| p.split.last.to_s.eql?('commands') }.each do |dir|
   dir.glob("**/*.rb").each { |file| require file }
 end
-lib_dir.glob("*.rb").each { |file| require file }
 
 module Pcs1
   class Error < StandardError; end
