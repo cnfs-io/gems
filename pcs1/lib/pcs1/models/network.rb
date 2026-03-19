@@ -59,9 +59,7 @@ module Pcs1
         mac = result[:mac]
 
         # Try to find existing interface by MAC or discovered_ip on this network
-        existing_iface = if mac
-                           interfaces.detect { |i| i.mac&.downcase == mac.downcase }
-                         end
+        existing_iface = (interfaces.detect { |i| i.mac&.downcase == mac.downcase } if mac)
         existing_iface ||= interfaces.detect { |i| i.discovered_ip == ip }
 
         if existing_iface
@@ -85,7 +83,7 @@ module Pcs1
             discovered_ip: ip,
             mac: mac,
             host_id: host.id,
-            network_id: self.id
+            network_id: id
           )
 
           counts[:new] += 1

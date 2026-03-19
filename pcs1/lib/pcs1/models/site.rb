@@ -16,6 +16,7 @@ module Pcs1
 
     def ssh_public_key_content
       return nil unless ssh_key
+
       path = Pathname(ssh_key).expand_path
       path.exist? ? path.read.strip : nil
     end
@@ -23,7 +24,9 @@ module Pcs1
     # Called when a host transitions to configured.
     # Delegates to services to reconcile their state.
     def reconcile!
-      Dnsmasq.reconcile!(exclude_ips: Host.local_ips)
+      local_ips = Host.local_ips
+      Dnsmasq.reconcile!(exclude_ips: local_ips)
+      Netboot.reconcile!(exclude_ips: local_ips)
     end
   end
 end

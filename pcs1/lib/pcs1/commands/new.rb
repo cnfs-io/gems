@@ -28,6 +28,7 @@ module Pcs1
             "pikvm"   => { user: "root", password: "root" },
             "jetkvm"  => { user: "root", password: "root" },
             "truenas" => { user: "root", password: "truenas" },
+            "debian"  => { user: "root", password: "changeme123!" },
             "proxmox" => { user: "root", password: "changeme123!" },
             "rpi"     => { user: "pi",   password: "raspberry" },
           }
@@ -42,6 +43,20 @@ module Pcs1
           # config.dnsmasq.lease_time = "12h"
           # config.dnsmasq.range_start_octet = 100
           # config.dnsmasq.range_end_octet = 200
+
+          # Netboot / PXE configuration
+          # config.netboot.image = "docker.io/netbootxyz/netbootxyz"
+          # config.netboot.netboot_dir = "/opt/pcs/netboot"
+          # config.netboot.tftp_port = 69
+          # config.netboot.http_port = 8080
+          # config.netboot.web_port = 3000
+          # config.netboot.boot_file_bios = "netboot.xyz.kpxe"
+          # config.netboot.boot_file_efi = "netboot.xyz.efi"
+          # config.netboot.boot_file_arm64 = "netboot.xyz-arm64.efi"
+
+          # Logging
+          # config.log_level = :info            # :debug, :info, :warn, :error
+          # config.log_output = $stdout          # or File.open("log/pcs.log", "a")
         end
       RUBY
 
@@ -49,7 +64,7 @@ module Pcs1
         root = Pathname.pwd / name
 
         if root.exist?
-          $stderr.puts "Error: Directory '#{name}' already exists."
+          warn "Error: Directory '#{name}' already exists."
           exit 1
         end
 
@@ -120,9 +135,7 @@ module Pcs1
         label ||= field_name.to_s.tr("_", " ").capitalize
         current = default || (record.respond_to?(field_name) ? record.send(field_name) : nil)
 
-        unless config
-          return tty_prompt.ask("#{label}:", default: current)
-        end
+        return tty_prompt.ask("#{label}:", default: current) unless config
 
         if config[:default]
           computed = config[:default].is_a?(Proc) ? config[:default].call(record) : config[:default]
@@ -161,7 +174,7 @@ module Pcs1
       end
 
       def create_network_for_ip(prompt, site, ip, index)
-        default_name = index == 0 ? "compute" : "network#{index}"
+        default_name = index.zero? ? "compute" : "network#{index}"
         default_subnet = subnet_from_ip(ip)
         default_gateway = gateway_from_ip(ip)
 
@@ -171,8 +184,8 @@ module Pcs1
         subnet  = prompt_for(prompt, Pcs1::NetworksView, net_record, :subnet, default: default_subnet)
         gateway = prompt_for(prompt, Pcs1::NetworksView, net_record, :gateway, default: default_gateway)
         dns_input = prompt_for(prompt, Pcs1::NetworksView, net_record, :dns_resolvers,
-                      label: "DNS resolvers (comma-separated)",
-                      default: "#{gateway}, 1.1.1.1")
+                               label: "DNS resolvers (comma-separated)",
+                               default: "#{gateway}, 1.1.1.1")
         dns_resolvers = dns_input.split(",").map(&:strip)
 
         network = Pcs1::Network.create(
@@ -180,7 +193,7 @@ module Pcs1
           subnet: subnet,
           gateway: gateway,
           dns_resolvers: dns_resolvers,
-          primary: index == 0,
+          primary: index.zero?,
           site_id: site.id
         )
         puts "  Network '#{name}' created (#{subnet})"

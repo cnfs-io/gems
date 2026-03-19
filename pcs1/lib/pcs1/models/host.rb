@@ -1,8 +1,5 @@
 # frozen_string_literal: true
 
-require "net/ssh"
-require "state_machines-activemodel"
-
 module Pcs1
   class Host < FlatRecord::Base
     source "hosts"
@@ -65,8 +62,6 @@ module Pcs1
       true
     end
 
-    # Verify key-based SSH access via agent.
-    # target: symbol for which IP method to call on the interface (:reachable_ip, :configured_ip, :discovered_ip)
     def key_access?(target: :reachable_ip)
       iface = interfaces.first
       return false unless iface
@@ -135,10 +130,26 @@ module Pcs1
       nil
     end
 
+    # --- Install file generation (PXE/preseed) ---
+
+    def generate_install_files(_output_dir)
+      nil
+    end
+
+    def kernel_params(base_url:)
+      nil
+    end
+
+    def boot_menu_entry
+      nil
+    end
+
+    def pxe_target?
+      !boot_menu_entry.nil?
+    end
+
     # --- Keying ---
 
-    # Push the SSH public key to this host using default credentials.
-    # Does NOT change status — fire_status_event(:key) after verifying with key_access?
     def key!
       unless ready_to_key?
         missing = []
@@ -153,7 +164,7 @@ module Pcs1
 
       target_ip = interfaces.first.reachable_ip
 
-      puts "  Pushing SSH key to #{target_ip} as #{connect_user}..."
+      Pcs1.logger.info("Pushing SSH key to #{target_ip} as #{connect_user}...")
       Net::SSH.start(target_ip, connect_user,
                      password: connect_pass,
                      non_interactive: true,
@@ -161,49 +172,43 @@ module Pcs1
                      timeout: 10) do |ssh|
         install_key(ssh, pub_key)
       end
-      puts "  Key pushed."
+      Pcs1.logger.info("Key pushed.")
     end
 
     # --- Provisioning ---
 
-    # Provision this host: restart networking to pick up DHCP reservation,
-    # then verify reachability at configured IP.
     def provision!
       configured_ip = interfaces.first&.configured_ip
       raise "No configured IP — run 'host configure' first" unless configured_ip
 
-      puts "  Restarting networking on #{hostname || id}..."
+      Pcs1.logger.info("Restarting networking on #{hostname || id}...")
       restart_networking!
 
-      puts "  Waiting for host to come back (#{wait_attempts} attempts, #{wait_interval}s interval)..."
+      Pcs1.logger.info("Waiting for host to come back (#{wait_attempts} attempts, #{wait_interval}s interval)...")
       wait_for_host(configured_ip)
 
       if key_access?(target: :configured_ip)
-        puts "  Verified: #{hostname || id} reachable at #{configured_ip}"
+        Pcs1.logger.info("Verified: #{hostname || id} reachable at #{configured_ip}")
         fire_status_event(:provision)
         save!
-        puts "  Host #{hostname || id} provisioned."
+        Pcs1.logger.info("Host #{hostname || id} provisioned.")
       else
         raise "Host #{hostname || id} not reachable at #{configured_ip} after restart"
       end
     end
 
-    # Override in STI subclasses for host-specific restart behavior.
     def restart_networking!
       raise NotImplementedError, "#{self.class} must implement #restart_networking!"
     end
 
     protected
 
-    # Default key installation — works for most Linux hosts.
-    # Override in subclasses that need special handling (e.g., read-only filesystem).
     def install_key(ssh, pub_key)
       ssh.exec!("mkdir -p ~/.ssh && chmod 700 ~/.ssh")
       ssh.exec!("echo '#{pub_key}' >> ~/.ssh/authorized_keys")
       ssh.exec!("chmod 600 ~/.ssh/authorized_keys")
     end
 
-    # SSH into the host at its current reachable IP and execute a command.
     def ssh_exec!(command)
       target_ip = interfaces.first&.reachable_ip
       raise "No reachable IP for host #{hostname || id}" unless target_ip
@@ -219,12 +224,10 @@ module Pcs1
       end
     end
 
-    # Wait for a host to become reachable at an IP (after reboot/restart).
-    # Reads attempts/interval from per-type config or global config.
     def wait_for_host(ip)
       wait_attempts.times do |i|
         if tcp_port_open?(ip, 22)
-          puts "  Host reachable at #{ip} (attempt #{i + 1}/#{wait_attempts})"
+          Pcs1.logger.info("Host reachable at #{ip} (attempt #{i + 1}/#{wait_attempts})")
           return true
         end
         sleep wait_interval

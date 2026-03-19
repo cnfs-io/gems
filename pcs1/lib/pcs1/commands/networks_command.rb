@@ -43,7 +43,7 @@ module Pcs1
                   end
 
         unless network
-          $stderr.puts "Error: No primary network found. Run 'pcs1 network add' first."
+          warn "Error: No primary network found. Run 'pcs1 network add' first."
           exit 1
         end
 
@@ -74,7 +74,7 @@ module Pcs1
         site = Pcs1::Site.first
 
         unless site
-          $stderr.puts "Error: No site configured. Run 'pcs1 site add' first."
+          warn "Error: No site configured. Run 'pcs1 site add' first."
           exit 1
         end
 
@@ -84,8 +84,8 @@ module Pcs1
         net.subnet        = prompt_field(prompt, net, :subnet)
         net.gateway       = prompt_field(prompt, net, :gateway)
         dns_input         = prompt_field(prompt, net, :dns_resolvers,
-                              label: "DNS resolvers (comma-separated)",
-                              default: net.gateway)
+                                         label: "DNS resolvers (comma-separated)",
+                                         default: net.gateway)
         net.dns_resolvers = dns_input&.split(",")&.map(&:strip)
         net.primary       = Pcs1::Network.all.none?
 
@@ -123,8 +123,8 @@ module Pcs1
           network.subnet        = prompt_field(prompt, network, :subnet)
           network.gateway       = prompt_field(prompt, network, :gateway)
           dns_input             = prompt_field(prompt, network, :dns_resolvers,
-                                    label: "DNS resolvers (comma-separated)",
-                                    default: network.dns_resolvers&.join(", "))
+                                               label: "DNS resolvers (comma-separated)",
+                                               default: network.dns_resolvers&.join(", "))
           network.dns_resolvers = dns_input&.split(",")&.map(&:strip)
           network.save!
 
@@ -163,7 +163,7 @@ module Pcs1
     rescue FlatRecord::RecordNotFound
       network = Pcs1::Network.find_by(name: id.to_s)
       unless network
-        $stderr.puts "Error: Network '#{id}' not found."
+        warn "Error: Network '#{id}' not found."
         exit 1
       end
       network

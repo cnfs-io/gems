@@ -20,10 +20,10 @@ dhcp-option=66,<%= ops_ip %>
 log-dhcp
 
 # PXE boot files
-dhcp-boot=netboot.xyz.efi,,<%= ops_ip %>
-pxe-service=x86PC,"PCS netboot.xyz",netboot.xyz.kpxe,<%= ops_ip %>
-pxe-service=x86-64_EFI,"PCS netboot.xyz",netboot.xyz.efi,<%= ops_ip %>
-pxe-service=ARM64_EFI,"PCS netboot.xyz",netboot.xyz-arm64.efi,<%= ops_ip %>
+dhcp-boot=<%= boot_file_efi %>,,<%= ops_ip %>
+pxe-service=x86PC,"PCS netboot.xyz",<%= boot_file_bios %>,<%= ops_ip %>
+pxe-service=x86-64_EFI,"PCS netboot.xyz",<%= boot_file_efi %>,<%= ops_ip %>
+pxe-service=ARM64_EFI,"PCS netboot.xyz",<%= boot_file_arm64 %>,<%= ops_ip %>
 
 # DHCP reservations (MAC -> configured IP -> hostname)
 <%- reservations.each do |r| -%>

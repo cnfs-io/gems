@@ -8,8 +8,8 @@ module Pcs1
     field_prompt :name,     :ask
     field_prompt :domain,   :ask
     field_prompt :timezone, :select,
-      choices: ->(_) { Pcs1::Platform.current.available_timezones },
-      filter: true
+                 choices: ->(_) { Pcs1::Platform.current.available_timezones },
+                 filter: true
     field_prompt :ssh_key,  :ask, default: "~/.ssh/authorized_keys"
   end
 end

@@ -12,8 +12,8 @@ module Pcs1
     end
 
     def self.load_project_config
-      config_path = File.join(Dir.pwd, "pcs.rb")
-      load(config_path) if File.exist?(config_path)
+      config_path = Pcs1.root / Pcs1::PROJECT_MARKER
+      load(config_path.to_s) if config_path.exist?
     end
   end
 end

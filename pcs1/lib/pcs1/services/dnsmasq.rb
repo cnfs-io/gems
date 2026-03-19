@@ -1,12 +1,7 @@
 # frozen_string_literal: true
 
-require "erb"
-require "pathname"
-
 module Pcs1
-  class Dnsmasq
-    TEMPLATE_PATH = Pathname.new(__dir__).join("..", "templates", "dnsmasq.conf.erb")
-
+  class Dnsmasq < Service
     # Reconcile: render config from current data, diff against disk, restart if changed.
     def self.reconcile!(exclude_ips: [])
       new_config = render_config(exclude_ips: exclude_ips)
@@ -15,11 +10,12 @@ module Pcs1
       current_config = config_path.exist? ? config_path.read : ""
 
       if new_config == current_config
-        puts "  dnsmasq: config unchanged, skipping restart"
+        logger.info("dnsmasq: config unchanged, skipping restart")
         return false
       end
 
-      write_config!(config_path, new_config)
+      sudo_write(config_path, new_config)
+      logger.info("dnsmasq: wrote #{config_path}")
       restart!
       true
     end
@@ -27,28 +23,28 @@ module Pcs1
     def self.start!
       system_cmd("sudo systemctl enable dnsmasq")
       system_cmd("sudo systemctl start dnsmasq")
-      puts "  dnsmasq: enabled and started"
+      logger.info("dnsmasq: enabled and started")
     end
 
     def self.stop!
       system_cmd("sudo systemctl stop dnsmasq")
       system_cmd("sudo systemctl disable dnsmasq")
-      puts "  dnsmasq: stopped and disabled"
+      logger.info("dnsmasq: stopped and disabled")
     end
 
     def self.restart!
       system_cmd("sudo systemctl restart dnsmasq")
-      puts "  dnsmasq: restarted"
+      logger.info("dnsmasq: restarted")
     end
 
     def self.status
-      result = `systemctl is-active dnsmasq 2>/dev/null`.strip
-      result.empty? ? "unknown" : result
+      capture("systemctl is-active dnsmasq").then { |r| r.empty? ? "unknown" : r }
     end
 
     def self.render_config(exclude_ips: [])
       site = Pcs1.site
-      config = Pcs1.config.dnsmasq
+      dnsmasq_config = Pcs1.config.dnsmasq
+      netboot_config = Pcs1.config.netboot
       network = site.networks.detect(&:primary)
 
       raise "No primary network configured" unless network
@@ -67,25 +63,26 @@ module Pcs1
       netmask = prefix_to_netmask(prefix_len)
       octets = subnet_base.split(".")
 
-      range_start = [*octets[0..2], config.range_start_octet.to_s].join(".")
-      range_end = [*octets[0..2], config.range_end_octet.to_s].join(".")
+      range_start = [*octets[0..2], dnsmasq_config.range_start_octet.to_s].join(".")
+      range_end = [*octets[0..2], dnsmasq_config.range_end_octet.to_s].join(".")
       gateway = network.gateway
       dns_servers = (network.dns_resolvers || [gateway]).join(",")
 
       reservations = build_reservations(site, exclude_ips: exclude_ips)
 
-      template = ERB.new(TEMPLATE_PATH.read, trim_mode: "-")
-      template.result_with_hash(
-        interface: config.interface,
-        range_start: range_start,
-        range_end: range_end,
-        netmask: netmask,
-        lease_time: config.lease_time,
-        gateway: gateway,
-        dns_servers: dns_servers,
-        ops_ip: ops_ip,
-        reservations: reservations
-      )
+      render_template("dnsmasq.conf.erb",
+                      interface: dnsmasq_config.interface,
+                      range_start: range_start,
+                      range_end: range_end,
+                      netmask: netmask,
+                      lease_time: dnsmasq_config.lease_time,
+                      gateway: gateway,
+                      dns_servers: dns_servers,
+                      ops_ip: ops_ip,
+                      boot_file_bios: netboot_config.boot_file_bios,
+                      boot_file_efi: netboot_config.boot_file_efi,
+                      boot_file_arm64: netboot_config.boot_file_arm64,
+                      reservations: reservations)
     end
 
     def self.build_reservations(site, exclude_ips: [])
@@ -107,18 +104,6 @@ module Pcs1
       end
 
       reservations
-    end
-
-    private
-
-    def self.write_config!(config_path, content)
-      config_path = Pathname(config_path)
-      IO.popen(["sudo", "tee", config_path.to_s], "w", out: File::NULL) { |io| io.write(content) }
-      puts "  dnsmasq: wrote #{config_path}"
-    end
-
-    def self.system_cmd(cmd)
-      system(cmd) || raise("Command failed: #{cmd}")
     end
 
     def self.prefix_to_netmask(prefix_len)

@@ -28,7 +28,7 @@ module Pcs1
         iface = Pcs1::Interface.find(id.to_s)
         view.show(iface, **view_options(options))
       rescue FlatRecord::RecordNotFound
-        $stderr.puts "Error: Interface #{id} not found."
+        warn "Error: Interface #{id} not found."
         exit 1
       end
     end
@@ -61,7 +61,7 @@ module Pcs1
 
         view.show(interface, **view_options(options))
       rescue FlatRecord::RecordNotFound => e
-        $stderr.puts "Error: #{e.message}"
+        warn "Error: #{e.message}"
         exit 1
       end
     end
@@ -90,7 +90,7 @@ module Pcs1
           view.show(iface, **view_options(options))
         end
       rescue FlatRecord::RecordNotFound
-        $stderr.puts "Error: Interface #{id} not found."
+        warn "Error: Interface #{id} not found."
         exit 1
       end
     end
@@ -115,7 +115,7 @@ module Pcs1
         iface.destroy
         puts "Interface '#{id}' removed."
       rescue FlatRecord::RecordNotFound
-        $stderr.puts "Error: Interface #{id} not found."
+        warn "Error: Interface #{id} not found."
         exit 1
       end
     end

@@ -1,0 +1,9 @@
+#!/bin/bash
+# PCS managed — Join Proxmox VE cluster via <%= master_ip %>
+set -euo pipefail
+
+echo "=== Joining cluster via <%= master_ip %> ==="
+pvecm add <%= master_ip %> --force
+
+echo "=== Joined cluster ==="
+pvecm status

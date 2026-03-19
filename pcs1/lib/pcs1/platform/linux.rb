@@ -19,6 +19,7 @@ module Pcs1
       def available_timezones
         output = `timedatectl list-timezones 2>/dev/null`
         return ["UTC"] if output.empty?
+
         output.lines.map(&:strip)
       end
     end

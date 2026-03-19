@@ -11,19 +11,17 @@ module Pcs1
       false
     end
 
-    # JetKVM requires manual key upload via web interface.
     def key!
       iface = interfaces.first
       target_ip = iface&.reachable_ip || "unknown"
 
-      puts "  JetKVM key upload must be done via the web interface."
-      puts "  Open https://#{target_ip}/ and upload your SSH public key."
-      puts "  After uploading, verify with: host.key_access?"
+      Pcs1.logger.info("JetKVM key upload must be done via the web interface.")
+      Pcs1.logger.info("Open https://#{target_ip}/ and upload your SSH public key.")
+      Pcs1.logger.info("After uploading, verify with: host.key_access?")
     end
 
-    # JetKVM: reboot to pick up new DHCP lease
     def restart_networking!
-      puts "  Rebooting JetKVM #{hostname || id}..."
+      Pcs1.logger.info("Rebooting JetKVM #{hostname || id}...")
       ssh_exec!("reboot")
     rescue StandardError
       # Expected — SSH drops on reboot

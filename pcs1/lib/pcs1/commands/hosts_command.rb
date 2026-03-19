@@ -28,7 +28,7 @@ module Pcs1
         host = Pcs1::Host.find(id.to_s)
         view.show(host, **view_options(options))
       rescue FlatRecord::RecordNotFound
-        $stderr.puts "Error: Host #{id} not found."
+        warn "Error: Host #{id} not found."
         exit 1
       end
     end
@@ -41,7 +41,7 @@ module Pcs1
         site = Pcs1::Site.first
 
         unless site
-          $stderr.puts "Error: No site configured. Run 'pcs1 site add' first."
+          warn "Error: No site configured. Run 'pcs1 site add' first."
           exit 1
         end
 
@@ -88,7 +88,7 @@ module Pcs1
           interactive_update(host, **options)
         end
       rescue FlatRecord::RecordNotFound
-        $stderr.puts "Error: Host #{id} not found."
+        warn "Error: Host #{id} not found."
         exit 1
       end
 
@@ -146,24 +146,23 @@ module Pcs1
               puts "  Interface on #{net_name} (discovered: #{ifc.discovered_ip}, MAC: #{ifc.mac})"
 
               ifc.configured_ip = prompt_for(prompt, iface_view, ifc, :configured_ip,
-                                    label: "  Static IP",
-                                    default: ifc.discovered_ip)
+                                             label: "  Static IP",
+                                             default: ifc.discovered_ip)
               ifc.name = prompt_for(prompt, iface_view, ifc, :name,
-                           label: "  NIC name")
+                                    label: "  NIC name")
               ifc.save!
             end
 
             puts
             view.show(host, **view_options(options))
-            puts
           else
             puts "  Skipped."
-            puts
           end
+          puts
         end
 
         remaining = Pcs1::Host.all.count { |h| h.status == "discovered" }
-        if remaining > 0
+        if remaining.positive?
           puts "#{remaining} host(s) still discovered. Run 'pcs1 host configure' again to configure them."
         else
           puts "All hosts configured."
@@ -177,9 +176,7 @@ module Pcs1
         label ||= field_name.to_s.tr("_", " ").capitalize
         current = default || (record.respond_to?(field_name) ? record.send(field_name) : nil)
 
-        unless config
-          return tty_prompt.ask("#{label}:", default: current)
-        end
+        return tty_prompt.ask("#{label}:", default: current) unless config
 
         if config[:default]
           computed = config[:default].is_a?(Proc) ? config[:default].call(record) : config[:default]
@@ -206,7 +203,7 @@ module Pcs1
       argument :id, required: true, desc: "Host ID"
       option :force, type: :boolean, default: false, desc: "Skip confirmation"
 
-      def call(id:, force: false, **options)
+      def call(id:, force: false, **_options)
         host = Pcs1::Host.find(id.to_s)
 
         unless force
@@ -221,7 +218,7 @@ module Pcs1
         host.destroy
         puts "Host '#{id}' removed."
       rescue FlatRecord::RecordNotFound
-        $stderr.puts "Error: Host #{id} not found."
+        warn "Error: Host #{id} not found."
         exit 1
       end
     end

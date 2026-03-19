@@ -9,7 +9,7 @@ module Pcs1
 
       def call(**options)
         if Pcs1::Site.all.any?
-          $stderr.puts "Error: Site already exists. Use 'pcs1 site update' to modify."
+          warn "Error: Site already exists. Use 'pcs1 site update' to modify."
           exit 1
         end
 
@@ -17,7 +17,7 @@ module Pcs1
 
         name     = prompt_field(prompt, Pcs1::Site.new, :name)
         domain   = prompt_field(prompt, Pcs1::Site.new(name: name), :domain,
-                     default: "#{name}.local")
+                                default: "#{name}.local")
         timezone = prompt_field(prompt, Pcs1::Site.new, :timezone)
         ssh_key  = prompt_field(prompt, Pcs1::Site.new, :ssh_key)
 
@@ -38,7 +38,7 @@ module Pcs1
       def call(**options)
         site = Pcs1::Site.first
         unless site
-          $stderr.puts "Error: No site configured. Run 'pcs1 site add' first."
+          warn "Error: No site configured. Run 'pcs1 site add' first."
           exit 1
         end
 
@@ -55,7 +55,7 @@ module Pcs1
       def call(field: nil, value: nil, **options)
         site = Pcs1::Site.first
         unless site
-          $stderr.puts "Error: No site configured. Run 'pcs1 site add' first."
+          warn "Error: No site configured. Run 'pcs1 site add' first."
           exit 1
         end
 

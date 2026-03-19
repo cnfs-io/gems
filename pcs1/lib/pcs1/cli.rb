@@ -42,6 +42,11 @@ module Pcs1
       register "interface add",    InterfacesCommand::Add
       register "interface update", InterfacesCommand::Update
       register "interface remove", InterfacesCommand::Remove, aliases: ["rm"]
+
+      # Templates
+      register "template list",      TemplatesCommand::List, aliases: ["ls"]
+      register "template customize", TemplatesCommand::Customize
+      register "template reset",     TemplatesCommand::Reset
     end
   end
 end

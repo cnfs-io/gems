@@ -1,0 +1,9 @@
+#!/bin/bash
+# PCS managed — Create Proxmox VE cluster: <%= cluster_name %>
+set -euo pipefail
+
+echo "=== Creating cluster '<%= cluster_name %>' ==="
+pvecm create <%= cluster_name %>
+
+echo "=== Cluster created ==="
+pvecm status

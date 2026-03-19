@@ -1,0 +1,8 @@
+#!ipxe
+# PCS managed — netboot.xyz custom hook
+# Try per-MAC boot script, fall back to PCS menu, then netboot.xyz default
+chain --replace MAC-${mac:hexraw}.ipxe || chain --replace pcs-boot.ipxe || goto netbootxyz
+:netbootxyz
+# Reduce netboot.xyz fallback menu timeout from 300s to 3s
+set boot_timeout 3000
+exit

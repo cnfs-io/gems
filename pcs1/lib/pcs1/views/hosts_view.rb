@@ -6,7 +6,7 @@ module Pcs1
     detail_fields :id, :hostname, :type, :role, :arch, :status,
                   :connect_as, :site_id
 
-    has_many :interfaces, columns: [:name, :discovered_ip, :configured_ip, :mac, :network_id]
+    has_many :interfaces, columns: %i[name discovered_ip configured_ip mac network_id]
 
     field_prompt :hostname, :ask
     field_prompt :role,     :ask

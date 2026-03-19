@@ -5,13 +5,14 @@ module Pcs1
     columns       :id, :name, :subnet, :gateway, :primary
     detail_fields :id, :name, :subnet, :gateway, :dns_resolvers, :primary, :site_id
 
-    has_many :interfaces, columns: [:name, :ip, :mac, :host_id]
+    has_many :interfaces, columns: %i[name ip mac host_id]
 
     field_prompt :name,          :ask
     field_prompt :subnet,        :ask
-    field_prompt :gateway,       :ask, default: ->(net) {
+    field_prompt :gateway,       :ask, default: lambda { |net|
       base = net.subnet&.split("/")&.first
       return nil unless base
+
       octets = base.split(".")
       octets[3] = "1"
       octets.join(".")
