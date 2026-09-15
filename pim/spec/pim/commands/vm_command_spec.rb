@@ -21,7 +21,7 @@ RSpec.describe Pim::VmCommand do
     let(:runner) { instance_double(Pim::VmRunner) }
     let(:vm) { instance_double(Pim::QemuVM, pid: 123) }
     let(:defaults) do
-      { disk: 'clone', fresh: false, network: 'bridged', bridge: nil, usb: [],
+      { disk: 'clone', fresh: false, network: 'bridged', bridge: nil, usb: [], shares: [],
         memory: nil, cpus: nil, console: false }
     end
 
@@ -84,6 +84,19 @@ RSpec.describe Pim::VmCommand do
       expect(runner).to receive(:run).with(**defaults)
 
       expect { subject.call(build_id: "dev-debian", usb: ['none']) }.to output(/VM is running/).to_stdout
+    end
+
+    it "takes shares from config, overridden by --share, ignored with --share none" do
+      Pim.configure { |c| c.vm { |v| v.shares = ['~/code'] } }
+
+      expect(runner).to receive(:run).with(**defaults, shares: ['~/code'])
+      expect { subject.call(build_id: "dev-debian") }.to output(/VM is running/).to_stdout
+
+      expect(runner).to receive(:run).with(**defaults, shares: ['/tmp:tmp:ro'])
+      expect { subject.call(build_id: "dev-debian", share: ['/tmp:tmp:ro']) }.to output(/VM is running/).to_stdout
+
+      expect(runner).to receive(:run).with(**defaults)
+      expect { subject.call(build_id: "dev-debian", share: ['none']) }.to output(/VM is running/).to_stdout
     end
 
     it "exits with error for missing build" do

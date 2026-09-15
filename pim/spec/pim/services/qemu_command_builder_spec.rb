@@ -102,6 +102,19 @@ RSpec.describe Pim::QemuCommandBuilder do
     end
   end
 
+  describe "#add_share" do
+    it "adds a 9p fsdev and device per share, after the NIC" do
+      builder.add_user_net(host_port: 2222)
+      builder.add_share('/Users/me/code', tag: 'code').add_share('/Users/me/a,b', tag: 'ab', readonly: true)
+      cmd = builder.build
+
+      expect(cmd).to include('local,id=fs0,path=/Users/me/code,security_model=none')
+      expect(cmd).to include('virtio-9p-pci,fsdev=fs0,mount_tag=code')
+      expect(cmd).to include('local,id=fs1,path=/Users/me/a,,b,security_model=none,readonly=on')
+      expect(cmd.index('-fsdev')).to be > cmd.index('virtio-net-pci,netdev=net0,addr=0x1')
+    end
+  end
+
   describe "#add_user_net" do
     it "produces user netdev with port forwarding" do
       builder.add_drive('/tmp/disk.qcow2')

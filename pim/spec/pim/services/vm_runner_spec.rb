@@ -151,6 +151,27 @@ RSpec.describe Pim::VmRunner do
     end
   end
 
+  describe "shares" do
+    include_context "bootable"
+
+    it "shares host directories over 9p, tag defaulting to the dir name" do
+      expect(vm_registry).to receive(:register)
+        .with(hash_including(shares: ["#{data_home}:#{File.basename(data_home)}", "#{data_home}:docs:ro"]))
+
+      expect { subject.run(disk: 'snapshot', network: 'host', shares: [data_home, "#{data_home}:docs:ro"]) }
+        .to output(/mount -t 9p .* docs \/mnt\/docs/).to_stdout
+
+      cmd = commands.last
+      expect(cmd).to include("virtio-9p-pci,fsdev=fs0,mount_tag=#{File.basename(data_home)}")
+      expect(cmd).to include("local,id=fs1,path=#{data_home},security_model=none,readonly=on")
+    end
+
+    it "rejects a share that is not a directory" do
+      expect { subject.run(disk: 'snapshot', network: 'host', shares: ['/nonexistent/dir']) }
+        .to raise_error(Pim::VmRunner::Error, /not a directory/)
+    end
+  end
+
   describe "networking" do
     include_context "bootable"
 

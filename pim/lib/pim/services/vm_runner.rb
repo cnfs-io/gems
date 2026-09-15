@@ -24,6 +24,7 @@ module Pim
       @bridged = false
       @bridge = nil
       @usb_devices = []
+      @shares = []
       @sudo = false
       @mac = nil
       @bridge_ip = nil
@@ -42,11 +43,12 @@ module Pim
     #             'host'     -- NAT with SSH port forwarding
     #   bridge:   interface to bridge (macOS default: default-route interface, Linux: br0)
     #   usb:      USB disks to pass through ("VID:PID" on macOS, or device paths)
+    #   shares:   host directories shared over 9p ("HOST_PATH[:TAG][:ro]")
     #   fresh:    recreate a persistent disk from the built image
     #   console:  attach serial to terminal (foreground)
     #   memory:   override from build recipe
     #   cpus:     override from build recipe
-    def run(disk: 'clone', network: 'bridged', bridge: nil, usb: [], fresh: false,
+    def run(disk: 'clone', network: 'bridged', bridge: nil, usb: [], shares: [], fresh: false,
             console: false, memory: nil, cpus: nil)
       validate_options!(disk, network)
 
@@ -60,6 +62,7 @@ module Pim
 
       # Resolve USB disks before any slow disk copy so a missing stick fails fast
       @usb_devices = Array(usb).map { |spec| Pim::UsbDisk.resolve(spec) }
+      @shares = Array(shares).map { |spec| parse_share(spec) }
       @sudo = (macos? && (@bridged || @usb_devices.any?)) ||
               @usb_devices.any? { |device| !File.writable?(device) }
 
@@ -270,11 +273,22 @@ module Pim
       end
 
       @usb_devices.each { |device| builder.add_usb_disk(Pim::UsbDisk.qemu_path(device)) }
+      @shares.each { |share| builder.add_share(share[:path], tag: share[:tag], readonly: share[:readonly]) }
 
       builder.extra_args('-snapshot') if @snapshot
       setup_efi(builder) if @arch == 'arm64'
 
       builder
+    end
+
+    # "HOST_PATH[:TAG][:ro]" -> { path:, tag:, readonly: }
+    def parse_share(spec)
+      path, *rest = spec.to_s.split(':')
+      readonly = !rest.delete('ro').nil?
+      path = File.expand_path(path.to_s)
+      raise Error, "Share #{path} is not a directory" unless File.directory?(path)
+
+      { path: path, tag: rest.first || File.basename(path), readonly: readonly }
     end
 
     # Prompt for the sudo password up front, while the terminal is still ours
@@ -410,6 +424,11 @@ module Pim
       puts "  Arch:    #{@arch}"
       puts "  Disk:    #{@disk} (#{@image_path})"
       @usb_devices.each { |device| puts "  USB:     #{device}" }
+      @shares.each do |share|
+        puts "  Share:   #{share[:path]} -> tag '#{share[:tag]}'#{' (read-only)' if share[:readonly]}"
+        puts "           guest: sudo mkdir -p /mnt/#{share[:tag]} && sudo mount -t 9p " \
+             "-o trans=virtio,version=9p2000.L,msize=512000 #{share[:tag]} /mnt/#{share[:tag]}"
+      end
 
       if @bridged
         puts "  Network: bridged (#{@bridge || 'br0'})"
@@ -437,7 +456,8 @@ module Pim
         mac: @mac,
         disk: @disk,
         sudo: @sudo,
-        usb: @usb_devices
+        usb: @usb_devices,
+        shares: @shares.map { |s| "#{s[:path]}:#{s[:tag]}#{':ro' if s[:readonly]}" }
       )
     end
 

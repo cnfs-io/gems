@@ -14,7 +14,7 @@ module Pim
 
     # Register a running VM, returns the assigned instance name
     def register(name:, pid:, build_id:, image_path:, ssh_port: nil,
-                 network: 'host', mac: nil, disk: 'snapshot', sudo: false, usb: [])
+                 network: 'host', mac: nil, disk: 'snapshot', sudo: false, usb: [], shares: [])
       actual_name = unique_name(name)
 
       state = {
@@ -29,6 +29,7 @@ module Pim
         'disk' => disk,
         'sudo' => sudo,
         'usb' => usb,
+        'shares' => shares,
         'started_at' => Time.now.utc.iso8601
       }
 

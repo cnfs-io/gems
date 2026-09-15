@@ -13,7 +13,14 @@ module Pim
       @cdrom = nil
       @netdevs = []
       @usb_disks = []
+      @shares = []
       @extra_args = []
+    end
+
+    # Share a host directory with the guest over virtio-9p (mount -t 9p -o trans=virtio TAG /mnt)
+    def add_share(path, tag:, readonly: false)
+      @shares << { path: path, tag: tag, readonly: readonly }
+      self
     end
 
     # Pass a host disk (e.g. /dev/rdisk5) to the guest as a USB mass-storage device
@@ -129,6 +136,16 @@ module Pim
           cmd += ['-drive', "file=#{path},format=raw,if=none,id=usbdisk#{i}"]
           cmd += ['-device', "usb-storage,bus=xhci.0,drive=usbdisk#{i},removable=on"]
         end
+      end
+
+      # 9p shares (after the NIC so it keeps its PCI slot); commas in QEMU option values are doubled.
+      # security_model=none keeps host modes (mapped-xattr makes files 0600) and tries the guest's chown,
+      # so with QEMU under sudo and a guest uid map (bindfs) files stay owned by the host user.
+      @shares.each_with_index do |share, i|
+        fsdev = "local,id=fs#{i},path=#{share[:path].gsub(',', ',,')},security_model=none"
+        fsdev += ',readonly=on' if share[:readonly]
+        cmd += ['-fsdev', fsdev]
+        cmd += ['-device', "virtio-9p-pci,fsdev=fs#{i},mount_tag=#{share[:tag]}"]
       end
 
       # Serial console

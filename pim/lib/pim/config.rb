@@ -53,13 +53,15 @@ module Pim
     #          host     - NAT, reachable only via ssh -p <port> localhost
     # bridge:  interface to bridge (default: macOS default-route interface, Linux br0)
     # usb:     USB disks to pass through: "VID:PID" (macOS, see `ventoy list`) or device paths
-    attr_accessor :disk, :network, :bridge, :usb
+    # shares:  host directories shared over 9p: "HOST_PATH[:TAG][:ro]" (TAG defaults to the dir name)
+    attr_accessor :disk, :network, :bridge, :usb, :shares
 
     def initialize
       @disk = "clone"
       @network = "bridged"
       @bridge = nil
       @usb = []
+      @shares = []
     end
   end
 

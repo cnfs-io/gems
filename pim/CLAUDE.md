@@ -153,6 +153,7 @@ Images include `qemu-guest-agent`. The host connects via a virtio-serial channel
 ### Disks and USB
 - `--disk=clone` (default): persistent full copy at `$XDG_DATA_HOME/pim/vms/<name>.qcow2`, reused on later runs; `--fresh` re-clones. `overlay` is the thin persistent variant; `snapshot` uses `-snapshot` (nothing saved)
 - `--usb=VID:PID,...` (or device paths): host disks attached as `usb-storage` on a `qemu-xhci` controller (`Pim::UsbDisk` resolves IDs via ioreg and unmounts on macOS); `--usb=none` ignores config
+- `--share=HOST_PATH[:TAG][:ro],...` (or `config.vm.shares`): host dirs over virtio-9p with `security_model=none`; `--share=none` ignores config. The guest sees host uids (501), so mount the 9p tag then `bindfs --force-user=<user> --force-group=<user> --create-for-user=501 --create-for-group=20` on top for a writable view whose new files stay owned by the host user. Requires a VM restart; no inotify for host-side changes
 
 ### VM defaults
 `config.vm` (`disk`, `network`, `bridge`, `usb`) sets defaults for `pim vm run`. `Pim.boot!` loads `~/.config/pim/pim.rb` (user-wide) before the project's `pim.rb`; command-line options win.

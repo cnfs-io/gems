@@ -21,6 +21,9 @@ module Pim
       option :usb, type: :array, default: nil,
              desc: "USB disks to pass through, comma-separated: VID:PID (macOS, see `ventoy list`) " \
                    "or device path; 'none' ignores config vm.usb"
+      option :share, type: :array, default: nil,
+             desc: "Host directories to share over 9p, comma-separated: HOST_PATH[:TAG][:ro] " \
+                   "(TAG defaults to the dir name); 'none' ignores config vm.shares"
       option :name, type: :string, default: nil,
              desc: "Name for this VM (and its persistent disk) (default: build_id)"
       option :memory, type: :integer, default: nil,
@@ -35,7 +38,7 @@ module Pim
              desc: "Label for the provisioned image (required when images.require_label is true)"
 
       def call(build_id:, console: false, disk: nil, fresh: false, network: nil, bridge: nil, usb: nil,
-               name: nil, memory: nil, cpus: nil, run: nil, run_and_stay: nil, label: nil, **)
+               share: nil, name: nil, memory: nil, cpus: nil, run: nil, run_and_stay: nil, label: nil, **)
         if run && run_and_stay
           Pim.exit!(1, message: "Cannot use both --run and --run-and-stay")
           return
@@ -64,6 +67,8 @@ module Pim
         bridge ||= defaults.bridge
         usb = Array(usb.nil? ? defaults.usb : usb)
         usb = [] if usb == ['none']
+        shares = Array(share.nil? ? defaults.shares : share)
+        shares = [] if shares == ['none']
 
         # Provisioning results must persist
         if script_path && disk == 'snapshot'
@@ -73,7 +78,7 @@ module Pim
 
         runner = Pim::VmRunner.new(build: build, name: name || build_id)
         options = { disk: disk, fresh: fresh, network: network, bridge: bridge, usb: usb,
-                    memory: memory, cpus: cpus }
+                    shares: shares, memory: memory, cpus: cpus }
 
         if script_path
           runner.run(**options, console: false)
