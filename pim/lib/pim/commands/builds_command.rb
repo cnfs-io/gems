@@ -217,7 +217,7 @@ module Pim
         puts
 
         runner = Pim::VmRunner.new(build: build)
-        runner.run(snapshot: true, console: true)
+        runner.run(disk: 'snapshot', network: 'host', usb: [], console: true)
       end
 
       def format_duration(seconds)

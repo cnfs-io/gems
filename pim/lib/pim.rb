@@ -34,10 +34,9 @@ require_relative "pim/services/system_ssh"
 require_relative "pim/services/architecture_resolver"
 require_relative "pim/services/cache_manager"
 require_relative "pim/services/script_loader"
-require_relative "pim/services/ventoy_config"
-require_relative "pim/services/ventoy_manager"
 require_relative "pim/services/registry"
 require_relative "pim/services/verifier"
+require_relative "pim/services/usb_disk"
 require_relative "pim/services/vm_runner"
 require_relative "pim/services/vm_registry"
 
@@ -99,8 +98,9 @@ module Pim
 
   # WEBrick server for serving preseed and post-install scripts
   class Server
-    def initialize(profile:, port: 8080, verbose: false, debug: false, preseed_name: nil, install_name: nil)
+    def initialize(profile:, port: 8080, verbose: false, debug: false, preseed_name: nil, install_name: nil, trap_signals: true)
       @profile = profile
+      @trap_signals = trap_signals
       @port = port
       @verbose = verbose
       @debug = debug
@@ -166,8 +166,11 @@ module Pim
         end
       end
 
-      trap('INT') { server.shutdown }
-      trap('TERM') { server.shutdown }
+      # When embedded (e.g. in a build), leave INT/TERM to the caller so Ctrl-C aborts the build
+      if @trap_signals
+        trap('INT') { server.shutdown }
+        trap('TERM') { server.shutdown }
+      end
 
       server.start
     end

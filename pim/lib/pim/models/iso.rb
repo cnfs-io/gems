@@ -104,13 +104,28 @@ module Pim
       response = http.get(uri.request_uri)
       raise "Failed to fetch checksums: #{response.code}" unless response.is_a?(Net::HTTPSuccess)
 
-      target = resolved_filename
-      response.body.each_line do |line|
-        hash, name = line.strip.split(/\s+/, 2)
-        return hash if name&.strip == target
+      self.class.parse_checksum(response.body, resolved_filename)
+    end
+
+    # The sha256 for filename in a checksum file: "hash  file", "hash *file" (Ubuntu, Mint),
+    # BSD "SHA256 (file) = hash" (Fedora), or a file holding only the hash (TrueNAS).
+    # Same rules as `ventoy get`, which reads this YAML format too.
+    def self.parse_checksum(body, filename)
+      hashes = 0
+      bare = nil
+
+      body.each_line do |line|
+        line = line.strip
+        if (m = line.match(/\ASHA256 \((.+)\) = (\h{64})\z/))
+          return m[2].downcase if m[1] == filename
+        elsif (m = line.match(/\A(\h{64})(?:\s+\*?(.+))?\z/))
+          hashes += 1
+          return m[1].downcase if m[2] == filename
+          bare = m[1] unless m[2]
+        end
       end
 
-      nil
+      hashes == 1 && bare ? bare.downcase : nil
     end
   end
 end

@@ -8,7 +8,6 @@ RSpec.describe "Pim namespace" do
       LocalTarget ProxmoxTarget AwsTarget IsoTarget
       FlatRecordSettings BuildManager LocalBuilder
       ArchitectureResolver CacheManager ScriptLoader
-      VentoyConfig VentoyManager
       QemuDiskImage QemuCommandBuilder QemuVM
       SSHConnection
       Verifier VerifyResult

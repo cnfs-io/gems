@@ -44,6 +44,14 @@ module Pim
       raise "No available port found in range #{start_port}-#{start_port + max_attempts}"
     end
 
+    # Interface of the default route on macOS (e.g. "en0"), used as the vmnet bridge
+    def self.default_interface
+      output, = Open3.capture2('route', '-n', 'get', 'default')
+      output[/interface:\s*(\S+)/, 1]
+    rescue Errno::ENOENT
+      nil
+    end
+
     # Runtime directory for sockets, PIDs, state files
     def self.runtime_dir
       dir = if ENV['XDG_RUNTIME_DIR']

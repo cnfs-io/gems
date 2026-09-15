@@ -35,13 +35,17 @@ module Pim
     end
 
     # Start VM in background and return immediately
-    def start_background(detach: true)
-      @pid = spawn(*@command, [:out, :err] => '/dev/null')
+    def start_background(detach: true, log_path: nil)
+      # stdin from /dev/null: otherwise QEMU puts the terminal in raw mode and swallows Ctrl-C.
+      # stdout/stderr (QEMU errors, and the serial console with -nographic) go to log_path if given.
+      output = log_path ? File.open(log_path, 'w') : File::NULL
+      @pid = spawn(*@command, in: File::NULL, [:out, :err] => output)
+      output.close if output.is_a?(File)
       Process.detach(@pid) if detach
       @detached = detach
 
       sleep 2
-      check_alive!
+      check_alive!(log_path: log_path)
       self
     end
 
@@ -159,6 +163,8 @@ module Pim
       attempt = 0
 
       while Time.now < deadline
+        raise Error, 'VM exited before SSH became available' unless running?
+
         attempt += 1
         begin
           socket = TCPSocket.new('127.0.0.1', @ssh_port)

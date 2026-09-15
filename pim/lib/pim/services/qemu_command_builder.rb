@@ -12,7 +12,14 @@ module Pim
       @drives = []
       @cdrom = nil
       @netdevs = []
+      @usb_disks = []
       @extra_args = []
+    end
+
+    # Pass a host disk (e.g. /dev/rdisk5) to the guest as a USB mass-storage device
+    def add_usb_disk(path)
+      @usb_disks << path
+      self
     end
 
     # Add a disk drive
@@ -84,27 +91,43 @@ module Pim
         cmd += ['-drive', "file=#{drive[:path]},format=#{drive[:format]},if=#{drive[:if_type]},index=#{drive[:index]}"]
       end
 
-      # CD-ROM
-      if @cdrom
-        cmd += ['-cdrom', @cdrom]
-        cmd += ['-boot', 'd'] # Boot from CD
-      end
-
-      # Network
+      # Network (before the CD-ROM so the NIC can claim its pinned PCI slot)
       @netdevs.each do |net|
         case net[:type]
         when 'user'
           netdev = "user,id=#{net[:id]},hostfwd=tcp::#{net[:host_port]}-:#{net[:guest_port]}"
           cmd += ['-netdev', netdev]
-          cmd += ['-device', "#{virtio_net_device},netdev=#{net[:id]}"]
+          cmd += ['-device', "#{virtio_net_device},netdev=#{net[:id]}#{net_pci_addr}"]
         when 'bridged'
           if macos?
-            cmd += ['-nic', "vmnet-bridged,id=#{net[:id]},mac=#{net[:mac]}"]
+            cmd += ['-nic', "vmnet-bridged,id=#{net[:id]},ifname=#{net[:bridge] || 'en0'},mac=#{net[:mac]}"]
           else
             bridge = net[:bridge] || 'br0'
             cmd += ['-netdev', "bridge,id=#{net[:id]},br=#{bridge}"]
-            cmd += ['-device', "#{virtio_net_device},netdev=#{net[:id]},mac=#{net[:mac]}"]
+            cmd += ['-device', "#{virtio_net_device},netdev=#{net[:id]},mac=#{net[:mac]}#{net_pci_addr}"]
           end
+        end
+      end
+
+      # CD-ROM
+      if @cdrom
+        if arm?
+          # virt has no IDE bus: -cdrom becomes a virtio-blk disk the installer can't detect as a CD
+          cmd += ['-device', 'virtio-scsi-pci,id=scsi0']
+          cmd += ['-drive', "file=#{@cdrom},media=cdrom,if=none,id=cd0,readonly=on"]
+          cmd += ['-device', 'scsi-cd,drive=cd0,bus=scsi0.0']
+        else
+          cmd += ['-cdrom', @cdrom]
+          cmd += ['-boot', 'd'] # Boot from CD
+        end
+      end
+
+      # USB disks (after the NIC so it keeps its PCI slot)
+      unless @usb_disks.empty?
+        cmd += ['-device', 'qemu-xhci,id=xhci']
+        @usb_disks.each_with_index do |path, i|
+          cmd += ['-drive', "file=#{path},format=raw,if=none,id=usbdisk#{i}"]
+          cmd += ['-device', "usb-storage,bus=xhci.0,drive=usbdisk#{i},removable=on"]
         end
       end
 
@@ -175,6 +198,17 @@ module Pim
       else
         'e1000'
       end
+    end
+
+    def arm?
+      %w[arm64 aarch64].include?(@arch)
+    end
+
+    # Pin the first NIC to PCI slot 1 on arm64 so its name (enp0s1) is the same
+    # in the installer (which has the extra SCSI CD-ROM controller) and the installed system.
+    # x86 q35 needs no pin: VGA holds slot 1 and the CD-ROM is on the built-in SATA controller.
+    def net_pci_addr
+      arm? && @netdevs.size == 1 ? ',addr=0x1' : ''
     end
 
     def macos?

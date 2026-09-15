@@ -27,15 +27,12 @@ RSpec.describe Pim::Config do
     expect(Pim.config.iso_dir).to eq("/custom/isos")
   end
 
-  it "supports ventoy nested config" do
-    Pim.configure do |c|
-      c.ventoy do |v|
-        v.version = "1.0.99"
-        v.device = "/dev/sdb"
-      end
-    end
-    expect(Pim.config.ventoy.version).to eq("1.0.99")
-    expect(Pim.config.ventoy.device).to eq("/dev/sdb")
+  it "provides vm defaults: persistent clone, bridged, no USB" do
+    vm = Pim.config.vm
+    expect(vm.disk).to eq("clone")
+    expect(vm.network).to eq("bridged")
+    expect(vm.bridge).to be_nil
+    expect(vm.usb).to eq([])
   end
 
   it "allows ENV in config values" do

@@ -20,14 +20,21 @@ RSpec.describe Pim::VmCommand do
     end
     let(:runner) { instance_double(Pim::VmRunner) }
     let(:vm) { instance_double(Pim::QemuVM, pid: 123) }
+    let(:defaults) do
+      { disk: 'clone', fresh: false, network: 'bridged', bridge: nil, usb: [],
+        memory: nil, cpus: nil, console: false }
+    end
 
     before do
+      Pim.reset!
       allow(Pim::Build).to receive(:find).with("dev-debian").and_return(build)
       allow(Pim::VmRunner).to receive(:new).and_return(runner)
       allow(runner).to receive(:run).and_return(runner)
       allow(runner).to receive(:vm).and_return(vm)
       allow(runner).to receive(:instance_name).and_return("dev-debian")
     end
+
+    after { Pim.reset! }
 
     it "is registered at 'vm run'" do
       expect {
@@ -39,32 +46,44 @@ RSpec.describe Pim::VmCommand do
       }.not_to raise_error
     end
 
-    it "boots a VM from a build" do
+    it "boots with the built-in defaults: persistent clone, bridged" do
+      expect(runner).to receive(:run).with(**defaults)
+
+      expect { subject.call(build_id: "dev-debian") }.to output(/VM is running/).to_stdout
+    end
+
+    it "takes defaults from config vm settings" do
+      Pim.configure do |c|
+        c.vm do |v|
+          v.disk = 'overlay'
+          v.network = 'host'
+          v.bridge = 'en7'
+          v.usb = ['058f:6387']
+        end
+      end
       expect(runner).to receive(:run).with(
-        snapshot: true,
-        clone: false,
-        console: false,
-        memory: nil,
-        cpus: nil,
-        bridged: false,
-        bridge: nil
+        **defaults, disk: 'overlay', network: 'host', bridge: 'en7', usb: ['058f:6387']
       )
 
       expect { subject.call(build_id: "dev-debian") }.to output(/VM is running/).to_stdout
     end
 
-    it "--clone implies snapshot: false" do
+    it "command line options override config" do
+      Pim.configure { |c| c.vm { |v| v.usb = ['058f:6387'] } }
       expect(runner).to receive(:run).with(
-        snapshot: false,
-        clone: true,
-        console: false,
-        memory: nil,
-        cpus: nil,
-        bridged: false,
-        bridge: nil
+        **defaults, disk: 'snapshot', network: 'host', fresh: true, usb: ['/dev/disk4']
       )
 
-      expect { subject.call(build_id: "dev-debian", clone: true) }.to output(/VM is running/).to_stdout
+      expect {
+        subject.call(build_id: "dev-debian", disk: 'snapshot', network: 'host', fresh: true, usb: ['/dev/disk4'])
+      }.to output(/VM is running/).to_stdout
+    end
+
+    it "--usb none ignores USB disks from config" do
+      Pim.configure { |c| c.vm { |v| v.usb = ['058f:6387'] } }
+      expect(runner).to receive(:run).with(**defaults)
+
+      expect { subject.call(build_id: "dev-debian", usb: ['none']) }.to output(/VM is running/).to_stdout
     end
 
     it "exits with error for missing build" do
@@ -72,6 +91,13 @@ RSpec.describe Pim::VmCommand do
       Pim.instance_variable_set(:@console_mode, false)
       expect(Kernel).to receive(:exit).with(1)
       expect { subject.call(build_id: "missing") }.to output(/not found/).to_stderr
+    end
+
+    it "exits with the error when a USB disk can't be used" do
+      allow(runner).to receive(:run).and_raise(Pim::UsbDisk::Error, "USB disk dead:beef not found")
+      Pim.instance_variable_set(:@console_mode, false)
+      expect(Kernel).to receive(:exit).with(1)
+      expect { subject.call(build_id: "dev-debian") }.to output(/dead:beef not found/).to_stderr
     end
 
     it "--run and --run-and-stay are mutually exclusive" do
@@ -90,7 +116,7 @@ RSpec.describe Pim::VmCommand do
       }.to output(/Script not found/).to_stderr
     end
 
-    it "--run implies snapshot: false" do
+    it "--run switches a snapshot disk to overlay so changes persist" do
       script = Tempfile.new(['provision', '.sh'])
       script.write("#!/bin/bash\necho hello")
       script.close
@@ -100,13 +126,11 @@ RSpec.describe Pim::VmCommand do
       allow(runner).to receive(:register_image).and_return(image)
       allow(runner).to receive(:stop)
 
-      expect(runner).to receive(:run).with(
-        hash_including(snapshot: false)
-      ).and_return(runner)
+      expect(runner).to receive(:run).with(hash_including(disk: 'overlay')).and_return(runner)
 
       expect {
-        subject.call(build_id: "dev-debian", run: script.path, label: "test")
-      }.to output(/--run implies --no-snapshot/).to_stdout
+        subject.call(build_id: "dev-debian", disk: 'snapshot', run: script.path, label: "test")
+      }.to output(/--run needs a persistent disk/).to_stdout
 
       script.unlink
     end
@@ -179,6 +203,13 @@ RSpec.describe Pim::VmCommand do
   end
 
   describe Pim::VmCommand::Stop do
+    let(:registry) { instance_double(Pim::VmRegistry) }
+
+    before do
+      allow(Pim::VmRegistry).to receive(:new).and_return(registry)
+      allow(registry).to receive(:unregister)
+    end
+
     it "is registered at 'vm stop'" do
       expect {
         begin
@@ -188,13 +219,21 @@ RSpec.describe Pim::VmCommand do
     end
 
     it "exits with error for unknown identifier" do
-      registry = instance_double(Pim::VmRegistry)
-      allow(Pim::VmRegistry).to receive(:new).and_return(registry)
       allow(registry).to receive(:find).and_return(nil)
 
       Pim.instance_variable_set(:@console_mode, false)
       expect(Kernel).to receive(:exit).with(1)
       expect { subject.call(identifier: "99") }.to output(/not found/).to_stderr
+    end
+
+    it "stops a sudo VM with sudo and keeps a persistent disk's EFI vars" do
+      allow(registry).to receive(:find).and_return(
+        'name' => 'dev', 'pid' => 999_999, 'sudo' => true, 'disk' => 'clone', 'image_path' => '/tmp/vms/dev.qcow2'
+      )
+      expect(subject).to receive(:system).with('sudo', 'kill', '-9', '999999').and_return(true)
+      expect(FileUtils).not_to receive(:rm_f)
+
+      expect { subject.call(identifier: "dev", force: true) }.to output(/Killed VM 'dev'/).to_stdout
     end
   end
 

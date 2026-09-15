@@ -20,10 +20,12 @@ Pim.configure do |config|
     fr.id_strategy = :string
   end
 
-  # Ventoy USB management
-  # config.ventoy do |v|
-  #   v.version = "1.0.99"
-  #   v.device = "/dev/sdX"
+  # `pim vm run` defaults (user-wide defaults can also go in ~/.config/pim/pim.rb)
+  # config.vm do |vm|
+  #   vm.disk = "clone"          # clone | overlay | snapshot
+  #   vm.network = "bridged"     # bridged | host
+  #   vm.bridge = "en0"          # interface to bridge (default: default-route interface)
+  #   vm.usb = ["058f:6387"]     # USB disks to pass through: VID:PID or device path
   # end
 end
 

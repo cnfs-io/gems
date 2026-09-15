@@ -63,17 +63,6 @@ RSpec.describe Pim::Config do
     expect(Pim.config.iso_dir).to eq("~/.cache/pim/isos")
   end
 
-  it "supports ventoy nested config" do
-    Pim.configure do |c|
-      c.ventoy do |v|
-        v.version = "1.0.99"
-        v.device = "/dev/sdX"
-      end
-    end
-    expect(Pim.config.ventoy.version).to eq("1.0.99")
-    expect(Pim.config.ventoy.device).to eq("/dev/sdX")
-  end
-
   describe "flat_record nested config" do
     it "yields a FlatRecordSettings object" do
       config = Pim::Config.new

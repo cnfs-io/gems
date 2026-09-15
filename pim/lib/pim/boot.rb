@@ -33,9 +33,17 @@ module Pim
     File.join(XDG_DATA_HOME, 'pim')
   end
 
+  # User-wide defaults, loaded before the project's pim.rb (read at call time so specs can redirect it)
+  def self.global_config_path
+    File.join(ENV.fetch('XDG_CONFIG_HOME', File.expand_path('~/.config')), 'pim', PROJECT_MARKER)
+  end
+
   def self.boot!(project_dir: nil)
     @project_dir = project_dir ? Pathname(project_dir) : root!
     @config = nil
+
+    # ~/.config/pim/pim.rb first, then the project's pim.rb on top of it
+    load(global_config_path) if File.exist?(global_config_path)
 
     # Load pim.rb — this executes Pim.configure and any model-level overrides
     load(@project_dir.join(PROJECT_MARKER).to_s)

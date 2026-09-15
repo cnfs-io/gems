@@ -11,30 +11,17 @@ module Pim
         puts "image_dir=#{config.image_dir}"
         puts "serve_port=#{config.serve_port}"
         puts "serve_profile=#{config.serve_profile}" if config.serve_profile
-        v = config.ventoy
-        puts "ventoy.version=#{v.version}" if v.version
-        puts "ventoy.device=#{v.device}" if v.device
-        puts "ventoy.dir=#{v.dir}" if v.dir
-        puts "ventoy.file=#{v.file}" if v.file
-        puts "ventoy.url=#{v.url}" if v.url
-        puts "ventoy.checksum=#{v.checksum}" if v.checksum
       end
     end
 
     class Get < self
       desc "Get a configuration value by name"
 
-      argument :key, required: true, desc: "Configuration key (e.g., memory, serve_port, ventoy.version)"
+      argument :key, required: true, desc: "Configuration key (e.g., iso_dir, serve_port)"
 
       def call(key:, **)
         config = Pim.config
-        parts = key.split('.')
-
-        value = if parts.size == 2 && parts.first == 'ventoy'
-                  config.ventoy.public_send(parts.last) rescue nil
-                elsif parts.size == 1 && config.respond_to?(key)
-                  config.public_send(key)
-                end
+        value = config.public_send(key) if config.respond_to?(key)
 
         if value.nil?
           Pim.exit!(1, message: "Error: key '#{key}' not found")

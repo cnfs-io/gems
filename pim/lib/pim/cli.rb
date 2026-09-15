@@ -7,7 +7,6 @@ require_relative "commands/profiles_command"
 require_relative "commands/isos_command"
 require_relative "commands/builds_command"
 require_relative "commands/targets_command"
-require_relative "commands/ventoy_command"
 require_relative "commands/vm_command"
 require_relative "commands/image_command"
 require_relative "commands/config_command"
@@ -64,13 +63,6 @@ module Pim
         register "target add",       TargetsCommand::Add
         register "target update",    TargetsCommand::Update
         register "target remove",    TargetsCommand::Remove, aliases: ["rm"]
-
-        # Ventoy
-        register "ventoy prepare",   VentoyCommand::Prepare
-        register "ventoy copy",      VentoyCommand::Copy
-        register "ventoy status",    VentoyCommand::Status
-        register "ventoy show",      VentoyCommand::Show
-        register "ventoy download",  VentoyCommand::Download
 
         # Images
         register "image list",       ImageCommand::List, aliases: ["ls"]

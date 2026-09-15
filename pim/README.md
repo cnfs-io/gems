@@ -155,13 +155,8 @@ pim target show ID                 # Show target details
 
 ### Ventoy USB
 
-```bash
-pim ventoy prepare DEVICE          # Format USB with Ventoy
-pim ventoy copy                    # Copy ISOs to Ventoy USB
-pim ventoy status                  # Show Ventoy USB status
-pim ventoy config                  # Show Ventoy configuration
-pim ventoy download                # Download Ventoy release
-```
+Ventoy USB management lives in the `ventoy` ppm package (pdt), not pim. To put pim's ISOs on a
+Ventoy stick, point it at pim's ISO cache: `ln -s ~/.cache/pim/isos ~/.cache/ventoy/isos`.
 
 ### Configuration
 
@@ -186,11 +181,6 @@ Project configuration uses a Ruby DSL in `pim.rb`:
 Pim.configure do |config|
   config.memory = 4096
   config.serve_port = 9090
-
-  config.ventoy do |v|
-    v.version = "1.0.99"
-    v.device = "/dev/sdX"
-  end
 end
 ```
 
@@ -198,7 +188,6 @@ Access config anywhere via `Pim.config`:
 
 ```ruby
 Pim.config.memory         # => 4096
-Pim.config.ventoy.version # => "1.0.99"
 ```
 
 ## Profile inheritance

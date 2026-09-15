@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'json'
+require 'socket'
 
 module Pim
   class VmRunner
@@ -18,8 +19,12 @@ module Pim
       @image_path = nil
       @golden_image = nil
       @temp_efi_vars = nil
+      @disk = nil
+      @snapshot = false
       @bridged = false
       @bridge = nil
+      @usb_devices = []
+      @sudo = false
       @mac = nil
       @bridge_ip = nil
       @ga_socket = nil
@@ -30,58 +35,61 @@ module Pim
     # Boot the VM.
     #
     # Options:
-    #   snapshot:  true (default) -- QEMU -snapshot, no disk changes
-    #   clone:     false -- if true, full independent copy
-    #   console:   false -- if true, attach serial to terminal (foreground)
-    #   memory:    override from build recipe
-    #   cpus:      override from build recipe
-    #   bridged:   false -- if true, use bridged networking (VM gets LAN IP)
-    #   bridge:    nil -- bridge device name (Linux only, default: br0)
-    #
-    # When snapshot: false and clone: false, creates a CoW overlay.
-    # When clone: true, creates a full independent copy.
-    # When snapshot: true (default), boots read-only with -snapshot.
-    def run(snapshot: true, clone: false, console: false, memory: nil, cpus: nil,
-            bridged: false, bridge: nil)
-      @snapshot = snapshot
-      @bridged = bridged
-      @bridge = bridge
-      @golden_image = find_golden_image
-      @image_path = prepare_image(@golden_image, snapshot: snapshot, clone: clone)
+    #   disk:     'clone'    -- persistent full copy in vms/<name>.qcow2, reused on later runs
+    #             'overlay'  -- persistent thin copy (backed by the built image)
+    #             'snapshot' -- QEMU -snapshot, nothing is saved
+    #   network:  'bridged'  -- VM gets a LAN IP (QEMU runs under sudo on macOS)
+    #             'host'     -- NAT with SSH port forwarding
+    #   bridge:   interface to bridge (macOS default: default-route interface, Linux: br0)
+    #   usb:      USB disks to pass through ("VID:PID" on macOS, or device paths)
+    #   fresh:    recreate a persistent disk from the built image
+    #   console:  attach serial to terminal (foreground)
+    #   memory:   override from build recipe
+    #   cpus:     override from build recipe
+    def run(disk: 'clone', network: 'bridged', bridge: nil, usb: [], fresh: false,
+            console: false, memory: nil, cpus: nil)
+      validate_options!(disk, network)
 
-      if bridged
-        @ssh_port = nil
-        builder = build_qemu_command(
-          memory: memory || @build.memory,
-          cpus: cpus || @build.cpus,
-          snapshot: snapshot,
-          bridged: true,
-          bridge: bridge
-        )
-        cmd = builder.build
-        cmd = ['sudo'] + cmd if macos?
-        @vm = Pim::QemuVM.new(command: cmd, ssh_port: nil)
-      else
-        @ssh_port = Pim::Qemu.find_available_port
-        builder = build_qemu_command(
-          memory: memory || @build.memory,
-          cpus: cpus || @build.cpus,
-          snapshot: snapshot
-        )
-        @vm = Pim::QemuVM.new(command: builder.build, ssh_port: @ssh_port)
+      @disk = disk
+      @snapshot = disk == 'snapshot'
+      @bridged = network == 'bridged'
+      @bridge = bridge || (macos? ? Pim::Qemu.default_interface : nil) if @bridged
+      @golden_image = find_golden_image
+      @image_path = @snapshot ? @golden_image : persistent_image_path
+      ensure_disk_not_in_use!
+
+      # Resolve USB disks before any slow disk copy so a missing stick fails fast
+      @usb_devices = Array(usb).map { |spec| Pim::UsbDisk.resolve(spec) }
+      @sudo = (macos? && (@bridged || @usb_devices.any?)) ||
+              @usb_devices.any? { |device| !File.writable?(device) }
+
+      prepare_image(fresh: fresh)
+      @usb_devices.each { |device| Pim::UsbDisk.release(device) }
+      @ssh_port = @bridged ? nil : Pim::Qemu.find_available_port
+
+      builder = build_qemu_command(memory: memory || @build.memory, cpus: cpus || @build.cpus)
+      cmd = builder.build
+      if @sudo
+        authenticate_sudo!
+        # -n: never prompt from the background (stdin is /dev/null); fails fast into the log instead
+        cmd = ['sudo', '-n'] + cmd
       end
+      @vm = Pim::QemuVM.new(command: cmd, ssh_port: @ssh_port)
 
       if console
-        register_vm(snapshot: snapshot)
+        register_vm
         print_connection_info
         @vm.start_console(detach: false)
         @vm.wait_for_exit
         unregister_vm
       else
-        @vm.start_background
-        register_vm(snapshot: snapshot)
-        if bridged
-          @bridge_ip = discover_ip(timeout: 30)
+        @log_path = File.join(Pim::Qemu.runtime_dir, "#{@name}.log")
+        puts "Starting VM (QEMU output: #{@log_path})"
+        @vm.start_background(log_path: @log_path)
+        register_vm
+        if @bridged
+          claim_agent_socket
+          @bridge_ip = discover_ip(timeout: 60)
           @registry&.update(@instance_name, bridge_ip: @bridge_ip) if @bridge_ip
         end
         print_connection_info
@@ -183,6 +191,15 @@ module Pim
 
     private
 
+    def validate_options!(disk, network)
+      unless Pim::VmSettings::DISKS.include?(disk)
+        raise Error, "Unknown disk mode '#{disk}' (use: #{Pim::VmSettings::DISKS.join(', ')})"
+      end
+      return if Pim::VmSettings::NETWORKS.include?(network)
+
+      raise Error, "Unknown network '#{network}' (use: #{Pim::VmSettings::NETWORKS.join(', ')})"
+    end
+
     def find_golden_image
       registry = Pim::Registry.new(image_dir: Pim.config.image_dir)
       entry = registry.find_legacy(profile: @profile.id, arch: @arch)
@@ -199,25 +216,42 @@ module Pim
       path
     end
 
-    def prepare_image(golden_image, snapshot:, clone:)
-      return golden_image if snapshot
-
-      vm_dir = File.join(Pim.data_home, 'vms')
-      FileUtils.mkdir_p(vm_dir)
-      timestamp = Time.now.strftime('%Y%m%d-%H%M%S')
-      dest = File.join(vm_dir, "#{@name}-#{timestamp}.qcow2")
-
-      if clone
-        puts "Cloning image (this may take a moment)..."
-        Pim::QemuDiskImage.clone(golden_image, dest)
-      else
-        Pim::QemuDiskImage.create_overlay(golden_image, dest)
-      end
-
-      dest
+    # One persistent disk per VM name, so later runs pick up where the last one left off
+    def persistent_image_path
+      File.join(Pim.data_home, 'vms', "#{@name}.qcow2")
     end
 
-    def build_qemu_command(memory:, cpus:, snapshot:, bridged: false, bridge: nil)
+    # Two QEMUs writing the same disk would corrupt it
+    def ensure_disk_not_in_use!
+      return if @snapshot
+
+      in_use = Pim::VmRegistry.new.list.find { |vm| vm['image_path'] == @image_path }
+      return unless in_use
+
+      raise Error, "VM disk #{@image_path} is in use by '#{in_use['name']}' " \
+                   "(stop it first, or use --name for a separate VM)"
+    end
+
+    def prepare_image(fresh:)
+      return if @snapshot
+
+      if File.exist?(@image_path) && !fresh
+        puts "Using existing VM disk: #{@image_path} (--fresh to start over from the built image)"
+        return
+      end
+
+      FileUtils.rm_f([@image_path, "#{@image_path}-efivars.fd"])
+      FileUtils.mkdir_p(File.dirname(@image_path))
+
+      if @disk == 'clone'
+        puts "Cloning image (this may take a moment)..."
+        Pim::QemuDiskImage.clone(@golden_image, @image_path)
+      else
+        Pim::QemuDiskImage.create_overlay(@golden_image, @image_path)
+      end
+    end
+
+    def build_qemu_command(memory:, cpus:)
       builder = Pim::QemuCommandBuilder.new(
         arch: @arch,
         memory: memory,
@@ -228,17 +262,28 @@ module Pim
 
       builder.add_drive(@image_path, format: 'qcow2')
 
-      if bridged
-        builder.add_bridged_net(bridge: bridge)
+      if @bridged
+        builder.add_bridged_net(bridge: @bridge)
         add_guest_agent_channel(builder)
       else
         builder.add_user_net(host_port: @ssh_port, guest_port: 22)
       end
 
-      builder.extra_args('-snapshot') if snapshot
+      @usb_devices.each { |device| builder.add_usb_disk(Pim::UsbDisk.qemu_path(device)) }
+
+      builder.extra_args('-snapshot') if @snapshot
       setup_efi(builder) if @arch == 'arm64'
 
       builder
+    end
+
+    # Prompt for the sudo password up front, while the terminal is still ours
+    def authenticate_sudo!
+      reasons = []
+      reasons << 'bridged networking' if @bridged
+      reasons << 'USB passthrough' if @usb_devices.any?
+      puts "sudo is needed for #{reasons.join(' and ')}"
+      raise Error, 'sudo authentication failed' unless system('sudo', '-v')
     end
 
     def add_guest_agent_channel(builder)
@@ -252,53 +297,110 @@ module Pim
       )
     end
 
+    # Polls the guest agent for the VM's first IPv4 address, showing progress while the guest boots
     def discover_ip(timeout: 30)
       return nil unless @ga_socket
 
+      print "Waiting for the VM's IP from the guest agent (up to #{timeout}s)"
+      $stdout.flush
       deadline = Time.now + timeout
+
       while Time.now < deadline
-        begin
-          cmd = macos? ? ['sudo', 'socat', '-', "UNIX-CONNECT:#{@ga_socket}"] :
-                         ['socat', '-', "UNIX-CONNECT:#{@ga_socket}"]
-
-          query = '{"execute":"guest-network-get-interfaces"}'
-          output, status = Open3.capture2(*cmd, stdin_data: "#{query}\n")
-
-          if status.success? && output.include?('"ip-address"')
-            data = JSON.parse(output.lines.last)
-            if data['return']
-              data['return'].each do |iface|
-                next if iface['name'] == 'lo'
-                iface['ip-addresses']&.each do |addr|
-                  if addr['ip-address-type'] == 'ipv4'
-                    return addr['ip-address']
-                  end
-                end
-              end
-            end
-          end
-        rescue StandardError
-          # Agent not ready yet
+        unless @vm.running?
+          puts
+          raise Error, "VM exited while booting#{log_tail}"
         end
 
+        ip = query_guest_ip
+        if ip
+          puts " #{ip}"
+          return ip
+        end
+
+        print '.'
+        $stdout.flush
         sleep 2
+      end
+
+      puts ' no IP yet'
+      nil
+    end
+
+    # QEMU under sudo creates the agent socket as root; take ownership once so it can be queried
+    # directly (no `sudo socat`, whose stdin never reaches EOF under sudo's pty and hangs)
+    def claim_agent_socket
+      return unless @sudo && @ga_socket
+
+      10.times do
+        break if File.socket?(@ga_socket)
+
+        sleep 0.5
+      end
+      system('sudo', '-n', 'chown', Process.uid.to_s, @ga_socket, out: File::NULL, err: File::NULL)
+    end
+
+    def query_guest_ip
+      response = UNIXSocket.open(@ga_socket) do |sock|
+        sock.write(%({"execute":"guest-network-get-interfaces"}\n))
+        read_agent_reply(sock, timeout: 3)
+      end
+      return nil unless response
+
+      data = JSON.parse(response)
+      (data['return'] || []).each do |iface|
+        next if iface['name'] == 'lo'
+
+        iface['ip-addresses']&.each do |addr|
+          return addr['ip-address'] if addr['ip-address-type'] == 'ipv4'
+        end
+      end
+      nil
+    rescue StandardError
+      nil # agent not ready yet
+    end
+
+    # First complete `"return"` line from the guest agent, or nil if none arrives within timeout
+    def read_agent_reply(sock, timeout:)
+      buffer = +''
+      deadline = Time.now + timeout
+
+      while (remaining = deadline - Time.now).positive?
+        return nil unless IO.select([sock], nil, nil, remaining)
+
+        chunk = sock.read_nonblock(65_536, exception: false)
+        return nil if chunk.nil? # agent side closed
+        next if chunk == :wait_readable
+
+        buffer << chunk
+        line = buffer.each_line.find { |l| l.end_with?("\n") && l.include?('"return"') }
+        return line if line
       end
 
       nil
     end
 
+    # Last lines of the QEMU log, for error messages
+    def log_tail
+      return '' unless @log_path && File.exist?(@log_path)
+
+      tail = File.readlines(@log_path).last(15).join.strip
+      tail.empty? ? " (no QEMU output in #{@log_path})" : ":\n#{tail}"
+    end
+
+    # Snapshot VMs get a throwaway copy of the EFI vars; persistent disks keep theirs alongside
     def setup_efi(builder)
       efi_code = Pim::Qemu.find_efi_firmware
-      efi_vars = @golden_image.sub(/\.qcow2$/, '-efivars.fd')
+      golden_vars = @golden_image.sub(/\.qcow2$/, '-efivars.fd')
 
-      return unless efi_code && File.exist?(efi_vars)
+      return unless efi_code && File.exist?(golden_vars)
 
-      @temp_efi_vars = "#{@image_path}-efivars.fd"
-      FileUtils.cp(efi_vars, @temp_efi_vars)
+      vars = "#{@image_path}-efivars.fd"
+      FileUtils.cp(golden_vars, vars) if @snapshot || !File.exist?(vars)
+      @temp_efi_vars = vars if @snapshot
 
       builder.extra_args(
         '-drive', "if=pflash,format=raw,file=#{efi_code},readonly=on",
-        '-drive', "if=pflash,format=raw,file=#{@temp_efi_vars}"
+        '-drive', "if=pflash,format=raw,file=#{vars}"
       )
     end
 
@@ -306,10 +408,11 @@ module Pim
       puts "VM: #{@name}"
       puts "  PID:     #{@vm.pid}"
       puts "  Arch:    #{@arch}"
-      puts "  Image:   #{@image_path}"
+      puts "  Disk:    #{@disk} (#{@image_path})"
+      @usb_devices.each { |device| puts "  USB:     #{device}" }
 
       if @bridged
-        puts "  Network: bridged"
+        puts "  Network: bridged (#{@bridge || 'br0'})"
         if @bridge_ip
           puts "  IP:      #{@bridge_ip}"
           puts "  SSH:     ssh #{@build.ssh_user}@#{@bridge_ip}"
@@ -318,11 +421,11 @@ module Pim
         end
       else
         puts "  SSH:     ssh -p #{@ssh_port} #{@build.ssh_user}@localhost"
-        puts "  Network: user (port forwarding)"
+        puts "  Network: host (port forwarding)"
       end
     end
 
-    def register_vm(snapshot:)
+    def register_vm
       @registry = Pim::VmRegistry.new
       @instance_name = @registry.register(
         name: @name,
@@ -330,9 +433,11 @@ module Pim
         build_id: @build.id,
         image_path: @image_path,
         ssh_port: @ssh_port,
-        network: @bridged ? 'bridged' : 'user',
+        network: @bridged ? 'bridged' : 'host',
         mac: @mac,
-        snapshot: snapshot
+        disk: @disk,
+        sudo: @sudo,
+        usb: @usb_devices
       )
     end
 

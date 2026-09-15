@@ -63,11 +63,6 @@ RSpec.describe Pim::CLI do
       output = run_cli("build")
       expect(output).to include("Commands:")
     end
-
-    it "registers ventoy subcommands" do
-      output = run_cli("ventoy")
-      expect(output).to include("Commands:")
-    end
   end
 
   describe "aliases" do
@@ -100,7 +95,6 @@ RSpec.describe Pim::CLI do
         Pim::IsosCommand,
         Pim::BuildsCommand,
         Pim::TargetsCommand,
-        Pim::VentoyCommand,
         Pim::ConfigCommand
       ].each do |cmd|
         expect(cmd.superclass).to eq(RestCli::Command),

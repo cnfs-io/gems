@@ -157,7 +157,8 @@ module Pim
         port: @preseed_port,
         verbose: false,
         preseed_name: @profile_name,
-        install_name: @profile_name
+        install_name: @profile_name,
+        trap_signals: false
       )
 
       saved_stdout = $stdout.dup
@@ -250,6 +251,17 @@ module Pim
     end
 
 
+    # Serial console + monitor muxed on stdio with signal=on, so Ctrl-C still
+    # reaches pim (the -nographic default mon:stdio puts the tty in raw mode)
+    def add_console_chardev(builder)
+      return unless @console && !@console_log
+
+      builder.extra_args(
+        '-chardev', 'stdio,id=con0,mux=on,signal=on',
+        '-mon', 'chardev=con0'
+      )
+    end
+
     def run_installer(image_path)
       output(:info, 'Starting installer VM')
 
@@ -258,7 +270,7 @@ module Pim
       serial = if @console_log
                  "file:#{@console_log}"
                elsif @console
-                 'stdio'
+                 'chardev:con0' # see add_console_chardev
                elsif use_display
                  'null'
                else
@@ -278,6 +290,7 @@ module Pim
       builder.add_user_net(host_port: @ssh_port, guest_port: 22)
 
       add_efi_pflash(builder) if @arch == 'arm64'
+      add_console_chardev(builder)
 
       consoles = []
       consoles << "console=#{serial_console},115200n8" if !@vnc || @console || @console_log
@@ -336,6 +349,10 @@ module Pim
         raise BuildError, 'Installation timed out'
       end
 
+      unless result.zero?
+        raise BuildError, "Installer VM exited with status #{result} (QEMU failed?)"
+      end
+
       output(:success, 'Installation complete — VM powered off')
       @vm = nil
     end
@@ -348,7 +365,7 @@ module Pim
       serial = if @console_log
                  "file:#{@console_log}"
                elsif @console
-                 'stdio'
+                 'chardev:con0' # see add_console_chardev
                elsif use_display
                  'null'
                else
@@ -369,6 +386,7 @@ module Pim
       if @arch == 'arm64'
         add_efi_pflash(builder)
       end
+      add_console_chardev(builder)
 
       if @vnc
         builder.extra_args('-vnc', ":#{@vnc}")

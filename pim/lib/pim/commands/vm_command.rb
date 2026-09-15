@@ -9,16 +9,20 @@ module Pim
 
       option :console, type: :boolean, default: false, aliases: ["-c"],
              desc: "Attach serial console (foreground, Ctrl+A X to quit)"
-      option :snapshot, type: :boolean, default: true,
-             desc: "Boot read-only, discard changes on exit (default)"
-      option :clone, type: :boolean, default: false,
-             desc: "Create a full independent copy of the image"
-      option :bridged, type: :boolean, default: false,
-             desc: "Use bridged networking (VM gets LAN IP, requires sudo on macOS)"
+      option :disk, type: :string, default: nil, values: Pim::VmSettings::DISKS,
+             desc: "clone: persistent copy, reused on later runs; overlay: persistent thin copy; " \
+                   "snapshot: throwaway (default: config vm.disk, clone)"
+      option :fresh, type: :boolean, default: false,
+             desc: "Recreate the VM's persistent disk from the built image"
+      option :network, type: :string, default: nil, values: Pim::VmSettings::NETWORKS,
+             desc: "bridged: LAN IP (sudo on macOS); host: NAT + SSH port forward (default: config vm.network, bridged)"
       option :bridge, type: :string, default: nil,
-             desc: "Bridge device for bridged networking (default: br0, Linux only)"
+             desc: "Interface to bridge (default: macOS default-route interface, Linux br0)"
+      option :usb, type: :array, default: nil,
+             desc: "USB disks to pass through, comma-separated: VID:PID (macOS, see `ventoy list`) " \
+                   "or device path; 'none' ignores config vm.usb"
       option :name, type: :string, default: nil,
-             desc: "Name for this VM instance (default: build_id)"
+             desc: "Name for this VM (and its persistent disk) (default: build_id)"
       option :memory, type: :integer, default: nil,
              desc: "Override memory in MB"
       option :cpus, type: :integer, default: nil,
@@ -30,9 +34,8 @@ module Pim
       option :label, type: :string, default: nil,
              desc: "Label for the provisioned image (required when images.require_label is true)"
 
-      def call(build_id:, console: false, snapshot: true, clone: false,
-               bridged: false, bridge: nil, name: nil, memory: nil, cpus: nil,
-               run: nil, run_and_stay: nil, label: nil, **)
+      def call(build_id:, console: false, disk: nil, fresh: false, network: nil, bridge: nil, usb: nil,
+               name: nil, memory: nil, cpus: nil, run: nil, run_and_stay: nil, label: nil, **)
         if run && run_and_stay
           Pim.exit!(1, message: "Cannot use both --run and --run-and-stay")
           return
@@ -54,22 +57,26 @@ module Pim
 
         build = Pim::Build.find(build_id)
 
-        # --clone implies --no-snapshot
-        snapshot = false if clone
+        # Command line wins over ~/.config/pim/pim.rb and the project's pim.rb
+        defaults = Pim.config.vm
+        disk ||= defaults.disk
+        network ||= defaults.network
+        bridge ||= defaults.bridge
+        usb = Array(usb.nil? ? defaults.usb : usb)
+        usb = [] if usb == ['none']
 
-        # --run/--run-and-stay implies --no-snapshot (changes should persist)
-        if script_path && snapshot && !clone
-          puts "Note: --run implies --no-snapshot (changes will persist in a CoW overlay)"
-          snapshot = false
+        # Provisioning results must persist
+        if script_path && disk == 'snapshot'
+          puts "Note: --run needs a persistent disk; using --disk=overlay"
+          disk = 'overlay'
         end
 
         runner = Pim::VmRunner.new(build: build, name: name || build_id)
+        options = { disk: disk, fresh: fresh, network: network, bridge: bridge, usb: usb,
+                    memory: memory, cpus: cpus }
 
         if script_path
-          runner.run(
-            snapshot: snapshot, clone: clone, console: false,
-            memory: memory, cpus: cpus, bridged: bridged, bridge: bridge
-          )
+          runner.run(**options, console: false)
 
           result = runner.provision(script_path, verbose: true)
 
@@ -91,10 +98,7 @@ module Pim
             puts "Stop with: pim vm stop #{runner.instance_name}"
           end
         else
-          runner.run(
-            snapshot: snapshot, clone: clone, console: console,
-            memory: memory, cpus: cpus, bridged: bridged, bridge: bridge
-          )
+          runner.run(**options, console: console)
 
           unless console
             puts
@@ -104,7 +108,7 @@ module Pim
         end
       rescue FlatRecord::RecordNotFound
         Pim.exit!(1, message: "Build '#{build_id}' not found")
-      rescue Pim::VmRunner::Error => e
+      rescue Pim::VmRunner::Error, Pim::UsbDisk::Error, Pim::QemuVM::Error => e
         Pim.exit!(1, message: e.message)
       end
 
@@ -189,17 +193,19 @@ module Pim
 
         pid = vm['pid']
         name = vm['name']
+        # Entries written before the 'sudo' field existed: bridged on macOS ran under sudo
+        sudo = vm.fetch('sudo') { vm['network'] == 'bridged' && macos? }
 
         begin
           if force
-            if vm['network'] == 'bridged' && macos?
+            if sudo
               system('sudo', 'kill', '-9', pid.to_s)
             else
               Process.kill('KILL', pid)
             end
             puts "Killed VM '#{name}' (PID #{pid})"
           else
-            if vm['network'] == 'bridged' && macos?
+            if sudo
               system('sudo', 'kill', '-TERM', pid.to_s)
             else
               Process.kill('TERM', pid)
@@ -234,7 +240,11 @@ module Pim
         false
       end
 
+      # Only snapshot VMs use a throwaway EFI vars copy; persistent disks keep theirs
       def cleanup_vm_files(vm)
+        disk = vm.fetch('disk') { vm['snapshot'] ? 'snapshot' : nil }
+        return unless disk == 'snapshot'
+
         efi_vars = "#{vm['image_path']}-efivars.fd"
         FileUtils.rm_f(efi_vars) if File.exist?(efi_vars)
       end

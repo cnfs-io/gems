@@ -57,7 +57,8 @@ Machine-local data remains in XDG directories:
 - `pim build run|list|show|clean|status` — build and manage VM images
 - `pim verify PROFILE` — boot image, run verification script, report pass/fail
 - `pim config list|get` — configuration management
-- `pim ventoy prepare|copy|status|config` — Ventoy USB management
+
+Ventoy USB management is not part of pim — it lives in the `ventoy` ppm package (pdt).
 
 ## Boot and Config
 
@@ -77,21 +78,15 @@ Pim.configure do |config|
   config.memory = 4096
   config.serve_port = 9090
   config.iso_dir = ENV.fetch("PIM_ISO_DIR", "~/.cache/pim/isos")
-
-  config.ventoy do |v|
-    v.version = "1.0.99"
-    v.device = "/dev/sdX"
-  end
 end
 ```
 
 Access config anywhere via `Pim.config`:
 ```ruby
 Pim.config.memory         # => 4096
-Pim.config.ventoy.version # => "1.0.99"
 ```
 
-`BuildConfig` and `VentoyConfig` delegate to `Pim.config` and accept per-build overrides.
+`BuildConfig` delegates to `Pim.config` and accepts per-build overrides.
 
 ## Namespace
 
@@ -100,7 +95,6 @@ Everything is flat under `Pim::` — no nested modules. This makes all classes d
 ```
 Pim
 ├── Config                   # Ruby DSL config object (populated by pim.rb)
-├── VentoySettings           # Nested config for Ventoy (accessed via config.ventoy)
 ├── Profile                  # Profile model (FlatRecord, parent chain, template resolution)
 ├── Iso                      # ISO model (FlatRecord)
 ├── Build                    # Build recipe model (FlatRecord)
@@ -116,8 +110,6 @@ Pim
 ├── CacheManager             # Content-based build cache keys
 ├── ScriptLoader             # Provisioning script resolution
 ├── Registry                 # Image registry
-├── VentoyConfig             # Ventoy config — delegates to Pim.config.ventoy
-├── VentoyManager            # Ventoy operations
 ├── QemuCommandBuilder       # QEMU command construction
 ├── QemuVM                   # QEMU VM lifecycle
 ├── QemuDiskImage            # qemu-img operations
@@ -141,10 +133,10 @@ All runtime state lives in `$XDG_RUNTIME_DIR/pim/` (falls back to `/tmp/pim/` on
 - `<n>.log` — QEMU stdout/stderr
 
 ### Root Ownership
-When using `--bridged` (vmnet-bridged), QEMU runs as root via sudo. All sockets, pidfiles, and the QEMU process are root-owned. All queries (QMP, guest agent, pid checks) require `sudo`.
+On macOS, with `--network=bridged` (vmnet-bridged) or any `--usb` disk, QEMU runs as root via sudo (recorded as `sudo: true` in the VM registry). All sockets, pidfiles, and the QEMU process are root-owned. All queries (QMP, guest agent, pid checks) require `sudo`.
 
 ### Guest Agent
-Images include `qemu-guest-agent`. The host connects via a virtio-serial channel named `org.qemu.guest_agent.0`. The agent needs ~1 second to respond — socat queries must include a sleep:
+Images include `qemu-guest-agent`. The host connects via a virtio-serial channel named `org.qemu.guest_agent.0`. For bridged VMs `VmRunner` chowns the root-owned socket to the user (`sudo -n chown`) and queries it directly from Ruby with a read timeout — never via `sudo socat`, whose stdin doesn't reach EOF under sudo's pty (sudo >= 1.9.14 `use_pty`), so it hangs. For manual debugging the agent needs ~1 second to respond, so socat queries must include a sleep:
 ```bash
 (echo '{"execute":"guest-info"}'; sleep 1) | sudo socat - UNIX-CONNECT:/tmp/pim/<n>.ga
 ```
@@ -155,8 +147,15 @@ Images include `qemu-guest-agent`. The host connects via a virtio-serial channel
 - macOS caveat: cannot use QEMU's `-daemonize` flag with vmnet-bridged due to ObjC runtime fork() crash
 
 ### Networking
-- `--bridged`: vmnet-bridged on en0, VM gets LAN IP (requires sudo)
-- Default: user-mode with `hostfwd=tcp::<port>-:22`
+- `--network=bridged` (default): vmnet-bridged on `--bridge` (default: macOS default-route interface), VM gets LAN IP (requires sudo)
+- `--network=host`: user-mode with `hostfwd=tcp::<port>-:22`
+
+### Disks and USB
+- `--disk=clone` (default): persistent full copy at `$XDG_DATA_HOME/pim/vms/<name>.qcow2`, reused on later runs; `--fresh` re-clones. `overlay` is the thin persistent variant; `snapshot` uses `-snapshot` (nothing saved)
+- `--usb=VID:PID,...` (or device paths): host disks attached as `usb-storage` on a `qemu-xhci` controller (`Pim::UsbDisk` resolves IDs via ioreg and unmounts on macOS); `--usb=none` ignores config
+
+### VM defaults
+`config.vm` (`disk`, `network`, `bridge`, `usb`) sets defaults for `pim vm run`. `Pim.boot!` loads `~/.config/pim/pim.rb` (user-wide) before the project's `pim.rb`; command-line options win.
 
 ## Code Organization
 
@@ -164,7 +163,7 @@ Images include `qemu-guest-agent`. The host connects via a virtio-serial channel
 lib/pim.rb                             # Main module, Server, XDG constants, boot dispatch
 lib/pim/
 ├── boot.rb                            # Pim.root, Pim.root!, Pim.boot!, Pim.reset!
-├── config.rb                          # Pim::Config DSL, VentoySettings, Pim.configure
+├── config.rb                          # Pim::Config DSL, Pim.configure
 ├── cli.rb                             # Dry::CLI registry
 ├── models.rb                          # FlatRecord configuration, model requires
 ├── models/
@@ -177,8 +176,6 @@ lib/pim/
 │   ├── architecture_resolver.rb       # Arch detection and builder routing
 │   ├── cache_manager.rb               # Build cache keys
 │   ├── script_loader.rb               # Script resolution from resources/scripts/
-│   ├── ventoy_config.rb               # VentoyConfig (delegates to Pim.config.ventoy)
-│   ├── ventoy_manager.rb              # Ventoy operations
 │   ├── registry.rb                    # Image registry
 │   ├── verifier.rb                    # Image verification
 │   ├── qemu.rb                        # QEMU utilities
@@ -206,7 +203,6 @@ lib/pim/
     ├── isos_command.rb
     ├── builds_command.rb
     ├── targets_command.rb
-    ├── ventoy_command.rb
     └── config_command.rb
 ```
 
@@ -221,7 +217,7 @@ Pim.boot!                                    # auto-detect from Dir.pwd
 ```
 
 ### Ruby Config DSL
-`Pim.configure` populates `Pim.config` (a `Pim::Config` instance). The `pim.rb` file in the project root calls `Pim.configure` with a block. `BuildConfig` and `VentoyConfig` delegate to `Pim.config` for defaults.
+`Pim.configure` populates `Pim.config` (a `Pim::Config` instance). The `pim.rb` file in the project root calls `Pim.configure` with a block. `BuildConfig` delegates to `Pim.config` for defaults.
 
 ### Deep Merge from Default
 Profile data is merged via parent chain using `Hash#deep_merge`. Child fields override parent fields.
@@ -245,7 +241,7 @@ Commands use `Pim.exit!` instead of `exit`. In CLI mode it exits the process. In
 
 Ruby gems: `dry-cli`, `activesupport`, `pry`, `webrick`, `net-ssh`, `net-scp`
 Dev gems: `rspec`, `rspec-mocks`
-System: `qemu`, `qemu-img`, `socat` (for socket queries), `bsdtar` (for ISO kernel extraction)
+System: `qemu`, `qemu-img`, `socat` (optional, manual socket queries), `bsdtar` (for ISO kernel extraction)
 
 ## Testing
 
