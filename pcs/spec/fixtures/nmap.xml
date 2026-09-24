@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<nmaprun scanner="nmap" args="nmap -sn -oX - 10.0.0.0/24">
+  <host><status state="up" reason="arp-response"/>
+    <address addr="10.0.0.1" addrtype="ipv4"/>
+    <address addr="D8:3A:DD:11:22:33" addrtype="mac" vendor="Raspberry Pi Trading"/>
+    <hostnames><hostname name="router.lan" type="PTR"/></hostnames>
+  </host>
+  <host><status state="up" reason="arp-response"/>
+    <address addr="10.0.0.50" addrtype="ipv4"/>
+    <address addr="AA:BB:CC:00:00:01" addrtype="mac"/>
+    <hostnames/>
+  </host>
+  <host><status state="down" reason="no-response"/>
+    <address addr="10.0.0.60" addrtype="ipv4"/>
+  </host>
+  <host><status state="up" reason="localhost-response"/>
+    <address addr="10.0.0.2" addrtype="ipv4"/>
+  </host>
+</nmaprun>

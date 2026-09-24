@@ -1,38 +1,24 @@
 # frozen_string_literal: true
 
 require "pcs"
-require "fileutils"
+require "pcs/cli"
 require "tmpdir"
 
-FIXTURES_DIR = Pathname.new(__dir__) / "fixtures" / "project"
-
-RSpec.shared_context "fixture project" do
-  around(:each) do |example|
-    Dir.mktmpdir("pcs-test-") do |tmpdir|
-      root = Pathname.new(tmpdir)
-      FileUtils.cp_r(FIXTURES_DIR.children, root)
-      Dir.chdir(root) do
-        ENV.delete("PCS_SITE")
-        Pcs.boot!(project_dir: root)
-        example.run
-      ensure
-        Pcs.reset!
-      end
-    end
-  end
-end
+Dir[File.join(__dir__, "support", "*.rb")].each { |f| require f }
 
 RSpec.configure do |config|
-  config.expect_with :rspec do |expectations|
-    expectations.include_chain_clauses_in_custom_matcher_descriptions = true
+  config.example_status_persistence_file_path = ".rspec_status"
+  config.disable_monkey_patching!
+  config.expect_with(:rspec) { |c| c.syntax = :expect }
+
+  # Every example gets its own empty data directory.
+  config.around do |example|
+    Dir.mktmpdir do |dir|
+      FlatRecord.configure { |c| c.data_path = File.join(dir, "data") }
+      @tmpdir = Pathname.new(dir)
+      example.run
+    ensure
+      FlatRecord.configure { |c| c.data_path = "data" }
+    end
   end
-
-  config.mock_with :rspec do |mocks|
-    mocks.verify_partial_doubles = true
-  end
-
-  config.filter_run_when_matching :focus
-  config.order = :random
-
-  config.include_context "fixture project", :uses_fixture_project
 end

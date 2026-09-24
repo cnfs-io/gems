@@ -1,216 +1,139 @@
 # frozen_string_literal: true
 
-require "time"
-
 module Pcs
+  # A machine at the site. Its type (a subclass) says how it's set up; its
+  # status says how far along it is:
+  #
+  #   discovered --key--> keyed --configure--> configured --provision--> provisioned
+  #
+  # Types installed over PXE (Debian) skip keying: the install lays down the
+  # key. Operations do the work and then fire these events; nothing else
+  # changes status.
   class Host < FlatRecord::Base
+    file_layout :individual
     source "hosts"
     sti_column :type
 
-    FIELDS = %i[id mac discovered_ip hostname connect_as
-                type role arch status preseed_interface discovered_at last_seen_at].freeze
-    MUTABLE_FIELDS = %i[hostname connect_as type role arch status].freeze
+    HOSTNAME = /\A[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\z/
+    ROLES = %w[cp node].freeze
+    ARCHES = %w[amd64 arm64].freeze
 
-    attribute :mac, :string
-    attribute :discovered_ip, :string
     attribute :hostname, :string
-    attribute :connect_as, :string, default: "root"
     attribute :type, :string
-    attribute :role, :string
-    attribute :arch, :string
-    attribute :status, :string, default: "discovered"
-    attribute :preseed_interface, :string
-    attribute :preseed_device, :string
-    attribute :discovered_at, :string
-    attribute :last_seen_at, :string
+    attribute :role, :string, default: "node"
+    attribute :arch, :string, default: "amd64"
+    attribute :status, :string
     attribute :site_id, :string
+    # Boot the installer, not the disk, when it next PXE boots (set by the
+    # install; see PxeTarget). Wipes its disk, so never on by default.
+    attribute :pxe_install, :boolean, default: false
 
     belongs_to :site, class_name: "Pcs::Site"
-    has_many :interfaces, class_name: "Pcs::Interface", foreign_key: :host_id
+    before_validation { self.site_id ||= Site.first&.id }
+    has_many :interfaces, class_name: "Pcs::Interface", foreign_key: :host_id, dependent: :destroy
 
-    # --- Class-level query methods ---
+    validates :hostname, format: { with: HOSTNAME, message: "must be a lowercase DNS label" }, allow_blank: true
+    validates :hostname, uniqueness: true, allow_blank: true
+    validates :role, inclusion: { in: ROLES }
+    validates :arch, inclusion: { in: ARCHES }
+    validates :type, inclusion: { in: ->(_) { Host.types }, message: "is not a known host type" }, allow_nil: true
 
-    def self.load(site_name = Pcs.site)
-      where(site_id: site_name)
-    end
-
-    def self.find_by_mac(mac, site_name: nil)
-      scope = site_name ? where(site_id: site_name) : all
-      normalized = mac&.downcase
-      scope.detect { |d| d.mac&.downcase == normalized }
-    end
-
-    def self.find_by_ip(ip, site_name: nil)
-      attrs = { discovered_ip: ip }
-      attrs[:site_id] = site_name if site_name
-      find_by(attrs)
-    end
-
-    def self.hosts_of_type(type, site_name: Pcs.site)
-      where(type: type.to_s, site_id: site_name)
-    end
-
-    def self.merge_scan(site_name, scan_results, network: nil)
-      counts = { new: 0, updated: 0, unchanged: 0 }
-
-      scan_results.each do |result|
-        ip = result[:ip]
-        mac = result[:mac]
-
-        existing = if mac && network
-                     find_by_mac_via_interface(mac, site_name: site_name) ||
-                       find_by_mac(mac, site_name: site_name)
-                   elsif mac
-                     find_by_mac(mac, site_name: site_name)
-                   else
-                     find_by_ip(ip, site_name: site_name)
-                   end
-
-        if existing
-          existing.update(last_seen_at: Time.now.iso8601)
-
-          if network
-            iface = existing.interface_on(network.name)
-            if iface
-              iface.update(ip: ip, mac: mac) if iface.ip != ip
-              counts[:unchanged] += 1
-            else
-              Interface.create(
-                mac: mac, ip: ip,
-                host_id: existing.id, network_id: network.id,
-                site_id: site_name
-              )
-              counts[:updated] += 1
-            end
-          else
-            if existing.discovered_ip != ip
-              existing.update(discovered_ip: ip)
-              counts[:updated] += 1
-            else
-              counts[:unchanged] += 1
-            end
-          end
-        else
-          host = create(
-            mac: mac,
-            discovered_ip: ip,
-            site_id: site_name,
-            status: "discovered",
-            connect_as: "root",
-            discovered_at: Time.now.iso8601,
-            last_seen_at: Time.now.iso8601
-          )
-
-          if network
-            Interface.create(
-              mac: mac, ip: ip,
-              host_id: host.id, network_id: network.id,
-              site_id: site_name
-            )
-          end
-
-          counts[:new] += 1
-        end
+    # action: :save persists each transition (ActiveModel's integration
+    # doesn't by default); an invalid host can't transition.
+    state_machine :status, initial: :discovered, action: :save do
+      event :key do
+        transition discovered: :keyed
       end
 
-      counts
+      event :configure do
+        transition keyed: :configured, if: :configuration_complete?
+        transition discovered: :configured, if: ->(host) { !host.requires_key? && host.configuration_complete? }
+      end
+
+      event :provision do
+        transition configured: :provisioned
+      end
     end
 
-    def self.find_by_mac_via_interface(mac, site_name:)
-      return nil unless mac
-      normalized = mac.downcase
-      iface = Interface.load(site_name).detect { |i| i.mac&.downcase == normalized }
-      iface&.host
+    def self.types
+      sti_types.keys
     end
 
-    # --- Strategy methods (overridden by STI subclasses) ---
-
-    def self.detect?(ssh_session)
-      raise NotImplementedError
+    # How a type reads in the UI; subclasses with brand names override it.
+    def self.label
+      sti_type.to_s.capitalize
     end
 
-    def render(output_dir)
-      raise NotImplementedError
+    # [[label, type], ...] for choosing a type in forms.
+    def self.type_choices
+      sti_types.map { |type, klass| [klass.label, type] }
     end
 
-    def deploy!(output_dir, state:)
-      raise NotImplementedError
+    # [[label, id], ...] for choosing a host in forms.
+    def self.choices
+      all.map { |host| [host.name, host.id] }
     end
 
-    def configure!
-      raise NotImplementedError
+    # The hostname, or where it was found until it has one.
+    def name
+      hostname.presence || primary_interface&.reachable_ip || "host #{id}"
     end
 
-    def healthy?
-      raise NotImplementedError
+    # Whether pcs must install its key (over SSH, or by hand for some KVMs)
+    # before the host can be configured.
+    def requires_key?
+      true
     end
 
-    # --- Convenience helpers (site accessed via association) ---
-
-    def fqdn
-      "#{hostname}.#{site.domain}"
+    # What's still needed before the host can be configured.
+    def missing_configuration
+      iface = primary_interface
+      {
+        type: type,
+        hostname: hostname,
+        mac: iface&.mac,
+        configured_ip: iface&.configured_ip
+      }.select { |_, value| value.blank? }.keys
     end
 
-    def has_storage?
-      !interface_on(:storage).nil?
+    def configuration_complete?
+      missing_configuration.empty?
     end
-
-    def compute_network
-      site.network(:compute)
-    end
-
-    def storage_network
-      site.network(:storage)
-    end
-
-    # --- Interface convenience methods ---
 
     def primary_interface
-      return nil if interfaces.none?
-      interfaces.detect { |i| i.network&.primary } || interfaces.first
+      interfaces.first
     end
 
-    def interface_on(network_name)
-      interfaces.detect { |i| i.network&.name == network_name.to_s }
+    def fqdn
+      [hostname, site&.domain].compact.join(".")
     end
 
-    def ip_on(network_name)
-      interface_on(network_name)&.ip
+    def cp?
+      role == "cp"
     end
 
-    def interface_name
-      primary_interface&.name
+    # Whether pcs installs this host's OS over PXE.
+    def pxe?
+      false
     end
 
-    protected
-
-    def with_ssh(ip = nil, user: "root", state:, &block)
-      target_ip = ip || current_ip(state: state)
-      Pcs::Adapters::SSH.connect(host: target_ip, key: site.ssh_private_key_path, user: user, &block)
+    # Who pcs logs in as: the user its installs create, unless the device
+    # comes with its own (KVMs log in as root).
+    def ssh_user
+      Pcs.settings.install.user
     end
 
-    def with_ssh_probe(ip = nil, state:, &block)
-      target_ip = ip || current_ip(state: state)
-      result = Pcs::Adapters::SSH.probe(host: target_ip, &block)
-      raise "Could not authenticate to #{target_ip}" unless result
-      result
+    # How to install pcs's key over a password login, as argv; nil when the
+    # key is added by hand (in the device's own UI).
+    def key_install_command(public_key)
+      ["sh", "-c", KEY_INSTALL, "key", public_key]
     end
 
-    def write_local(output_dir, path, content)
-      dest = output_dir / path.delete_prefix("/")
-      dest.dirname.mkpath
-      dest.write(content)
-      puts "  -> #{dest}"
-    end
-
-    def current_ip(state:)
-      host_status = state.host_status(hostname)
-      case host_status
-      when "discovered", "installing"
-        discovered_ip
-      else
-        ip_on(:compute) || discovered_ip
-      end
-    end
+    # Appends $1 to authorized_keys unless it's already there.
+    KEY_INSTALL = <<~SH.tr("\n", " ").strip
+      mkdir -p ~/.ssh && chmod 700 ~/.ssh && touch ~/.ssh/authorized_keys &&
+      (grep -qxF "$1" ~/.ssh/authorized_keys || echo "$1" >> ~/.ssh/authorized_keys) &&
+      chmod 600 ~/.ssh/authorized_keys
+    SH
   end
 end

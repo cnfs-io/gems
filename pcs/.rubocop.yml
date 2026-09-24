@@ -1,0 +1,26 @@
+AllCops:
+  TargetRubyVersion: 3.2
+
+Style/StringLiterals:
+  EnforcedStyle: double_quotes
+
+Style/StringLiteralsInInterpolation:
+  EnforcedStyle: double_quotes
+
+Metrics/BlockLength:
+  Exclude:
+    - "spec/**/*"
+    - "*.gemspec"
+
+Metrics/MethodLength:
+  Exclude:
+    - "spec/**/*"
+
+# Keyword arguments name themselves; long lists of them read fine.
+Metrics/ParameterLists:
+  CountKeywordArgs: false
+
+# Views are markup: a method per section reads better than splitting it up.
+Metrics/AbcSize:
+  Exclude:
+    - "lib/pcs/views/**/*"

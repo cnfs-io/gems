@@ -2,4 +2,6 @@
 # frozen_string_literal: true
 
 require "pcs"
-Pcs.run(*ARGV)
+require "pcs/cli"
+
+Dry::CLI.new(Pcs::CLI).call

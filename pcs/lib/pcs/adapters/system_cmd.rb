@@ -1,70 +1,43 @@
 # frozen_string_literal: true
 
 require "open3"
-require "json"
-require "pathname"
 
 module Pcs
   module Adapters
+    # Runs local programs. Arguments are passed as argv, never through a
+    # shell, so no value can be interpreted as shell syntax.
     class SystemCmd
-      FailedStatus = Data.define(:exitstatus) do
-        def success? = false
+      Result = Data.define(:argv, :stdout, :stderr, :status) do
+        def success? = status.zero?
+
+        def message
+          "`#{argv.join(" ")}` failed (#{status}): #{stderr.strip.empty? ? stdout.strip : stderr.strip}"
+        end
       end
 
-      Result = Data.define(:stdout, :stderr, :status) do
-        def success? = status.success?
+      # A command run with run! didn't succeed; carries its Result.
+      class Failed < Pcs::Error
+        attr_reader :result
+
+        def initialize(result)
+          @result = result
+          super(result.message)
+        end
       end
 
-      def run(cmd, sudo: false)
-        full_cmd = sudo ? "sudo #{cmd}" : cmd
-        stdout, stderr, status = Open3.capture3(full_cmd)
-        Result.new(stdout: stdout, stderr: stderr, status: status)
+      def run(*argv, input: nil, chdir: nil)
+        argv = argv.flatten.map(&:to_s)
+        options = { stdin_data: input.to_s }
+        options[:chdir] = chdir.to_s if chdir
+        stdout, stderr, status = Open3.capture3(*argv, **options)
+        Result.new(argv, stdout, stderr, status.exitstatus)
       rescue Errno::ENOENT => e
-        binary = cmd.split.first
-        Result.new(
-          stdout: "",
-          stderr: "Command not found: #{binary} (#{e.message})",
-          status: FailedStatus.new(exitstatus: 127)
-        )
+        Result.new(argv, "", e.message, 127)
       end
 
-      def run!(cmd, sudo: false)
-        result = run(cmd, sudo: sudo)
-        unless result.success?
-          raise "Command failed: #{cmd}\nstderr: #{result.stderr}"
-        end
-
-        result
-      end
-
-      def ip_json(subcommand)
-        result = run!("ip -j #{subcommand}")
-        JSON.parse(result.stdout)
-      end
-
-      def file_write(path, content, sudo: false)
-        if sudo
-          IO.popen(["sudo", "tee", path.to_s], "w", out: File::NULL) { |io| io.write(content) }
-        else
-          Pathname.new(path).write(content)
-        end
-      end
-
-      def service(action, name)
-        run!("systemctl #{action} #{name}", sudo: true)
-      end
-
-      def apt_install(*packages)
-        run!("apt-get install -y #{packages.join(" ")}", sudo: true)
-      end
-
-      SBIN_DIRS = %w[/usr/sbin /sbin /usr/local/sbin].freeze
-
-      def command_exists?(cmd)
-        search_dirs = ENV.fetch("PATH", "").split(":") | SBIN_DIRS
-        search_dirs.any? do |dir|
-          File.executable?(File.join(dir, cmd))
-        end
+      # Like run, but raises Failed unless the command succeeded.
+      def run!(...)
+        run(...).tap { |result| raise Failed, result unless result.success? }
       end
     end
   end

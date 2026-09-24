@@ -2,7 +2,16 @@
 
 source "https://rubygems.org"
 
-gem "flat_record", path: File.expand_path("../flat_record", __dir__)
-gem "rest_cli", path: File.expand_path("../rest_cli", __dir__)
-
+# Specify your gem's dependencies in pcs.gemspec
 gemspec
+
+gem "irb"
+gem "rake", "~> 13.0"
+
+gem "rspec", "~> 3.0"
+
+gem "rubocop", "~> 1.21"
+
+# Local, unpublished (linked by local-gems)
+gem "flat_record", path: File.expand_path("~/.local/share/gems/flat_record")
+gem "termino", path: File.expand_path("~/.local/share/gems/termino")

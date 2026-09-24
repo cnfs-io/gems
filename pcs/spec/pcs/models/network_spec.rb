@@ -1,77 +1,35 @@
 # frozen_string_literal: true
 
-RSpec.describe Pcs::Network, :uses_fixture_project do
-  describe ".load" do
-    it "loads networks for a site" do
-      networks = Pcs::Network.load("sg")
-      expect(networks.size).to eq(2)
-    end
+RSpec.describe Pcs::Network do
+  it "knows its range, netmask and resolvers" do
+    net = described_class.new(name: "lan", subnet: "10.0.0.0/24", dns_resolvers: "1.1.1.1, 8.8.8.8")
+    expect(net.contains?("10.0.0.200")).to be(true)
+    expect(net.contains?("10.0.1.1")).to be(false)
+    expect(net.contains?("not an ip")).to be(false)
+    expect(net.netmask).to eq("255.255.255.0")
+    expect(net.dns_list).to eq(%w[1.1.1.1 8.8.8.8])
   end
 
-  describe ".primary" do
-    it "finds primary network" do
-      primary = Pcs::Network.primary("sg")
-      expect(primary.name).to eq("compute")
-      expect(primary.primary).to eq(true)
-    end
+  it "validates the subnet and that the gateway is inside it" do
+    expect(described_class.new(name: "a", subnet: "10.0.0.5").tap(&:valid?).errors[:subnet]).to be_present
+    expect(described_class.new(name: "b", subnet: "10.0.0.0/24", gateway: "10.9.9.1").tap(&:valid?).errors[:gateway])
+      .to be_present
+  end
+end
+
+RSpec.describe Pcs::Interface do
+  it "normalises and validates MACs, and keeps configured IPs inside the network" do
+    iface = described_class.new(network_id: network.id, mac: " AA:BB:CC:DD:EE:FF ", configured_ip: "192.168.9.9")
+    expect(iface.mac).to eq("aa:bb:cc:dd:ee:ff")
+    expect(iface).not_to be_valid
+    expect(iface.errors[:configured_ip].first).to include("not in primary")
+    expect(described_class.new(mac: "nope").tap(&:valid?).errors[:mac]).to be_present
   end
 
-  describe ".find_by_name" do
-    it "finds by name" do
-      net = Pcs::Network.find_by_name("storage", site_name: "sg")
-      expect(net.subnet).to eq("172.31.2.0/24")
-    end
-
-    it "returns nil for unknown name" do
-      expect(Pcs::Network.find_by_name("unknown", site_name: "sg")).to be_nil
-    end
-  end
-
-  describe "#contains_ip?" do
-    it "returns true for IP in subnet" do
-      net = Pcs::Network.find_by_name("compute", site_name: "sg")
-      expect(net.contains_ip?("172.31.1.50")).to eq(true)
-    end
-
-    it "returns false for IP outside subnet" do
-      net = Pcs::Network.find_by_name("compute", site_name: "sg")
-      expect(net.contains_ip?("172.31.2.50")).to eq(false)
-    end
-  end
-
-  describe "#site" do
-    it "returns the parent site" do
-      net = Pcs::Network.find_by_name("compute", site_name: "sg")
-      expect(net.site).to be_a(Pcs::Site)
-      expect(net.site.name).to eq("sg")
-    end
-  end
-
-  describe "attributes" do
-    let(:compute) { Pcs::Network.find_by_name("compute", site_name: "sg") }
-
-    it "has name" do
-      expect(compute.name).to eq("compute")
-    end
-
-    it "has subnet" do
-      expect(compute.subnet).to eq("172.31.1.0/24")
-    end
-
-    it "has gateway" do
-      expect(compute.gateway).to eq("172.31.1.1")
-    end
-
-    it "has dns_resolvers" do
-      expect(compute.dns_resolvers).to eq(["172.31.1.1", "1.1.1.1", "8.8.8.8"])
-    end
-
-    it "has primary flag" do
-      expect(compute.primary).to eq(true)
-    end
-
-    it "has site_id" do
-      expect(compute.site_id).to eq("sg")
-    end
+  it "is reachable at its configured IP once it has one" do
+    iface = described_class.new(discovered_ip: "10.0.0.50")
+    expect(iface.reachable_ip).to eq("10.0.0.50")
+    iface.configured_ip = "10.0.0.11"
+    expect(iface.reachable_ip).to eq("10.0.0.11")
   end
 end
