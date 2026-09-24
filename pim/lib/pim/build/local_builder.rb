@@ -158,6 +158,7 @@ module Pim
         verbose: false,
         preseed_name: @profile_name,
         install_name: @profile_name,
+        automation: @build.automation,
         trap_signals: false
       )
 
@@ -184,7 +185,16 @@ module Pim
 
     def preseed_url
       ip = local_ip
-      "http://#{ip}:#{@preseed_port}/preseed.cfg"
+      "http://#{ip}:#{@preseed_port}/#{kickstart? ? 'ks.cfg' : 'preseed.cfg'}"
+    end
+
+    def kickstart?
+      @build.automation == 'kickstart'
+    end
+
+    # ISO 9660 volume identifier: 32 bytes at offset 40 of the primary volume descriptor (sector 16)
+    def iso_volume_label
+      File.open(@iso_path, 'rb') { |f| f.pread(32, 16 * 2048 + 40) }.strip.gsub(' ', '\x20')
     end
 
     def local_ip
@@ -198,14 +208,17 @@ module Pim
 
       @kernel_dir = Dir.mktmpdir('pim-kernel-')
 
-      install_subdir = case @arch
-                       when 'arm64' then 'install.a64'
-                       when 'x86_64' then 'install.amd'
-                       else raise BuildError, "Unsupported architecture: #{@arch}"
-                       end
-
-      vmlinuz = "#{install_subdir}/vmlinuz"
-      initrd = "#{install_subdir}/initrd.gz"
+      vmlinuz, initrd =
+        if kickstart?
+          %w[images/pxeboot/vmlinuz images/pxeboot/initrd.img]
+        else
+          install_subdir = case @arch
+                           when 'arm64' then 'install.a64'
+                           when 'x86_64' then 'install.amd'
+                           else raise BuildError, "Unsupported architecture: #{@arch}"
+                           end
+          ["#{install_subdir}/vmlinuz", "#{install_subdir}/initrd.gz"]
+        end
 
       _, stderr, status = Open3.capture3(
         'bsdtar', 'xf', @iso_path, '-C', @kernel_dir, vmlinuz, initrd
@@ -295,13 +308,18 @@ module Pim
       consoles = []
       consoles << "console=#{serial_console},115200n8" if !@vnc || @console || @console_log
       consoles << 'console=tty0' if @vnc
-      append_parts = [
-        'auto=true', 'priority=critical',
-        "preseed/url=#{preseed_url}",
-        'grub-installer/force-efi-extra-removable=true',
-        *consoles,
-        '---'
-      ]
+      append_parts = if kickstart?
+                       # Direct kernel boot, so Anaconda is told where its stage2 image is (the CD, by label)
+                       ["inst.ks=#{preseed_url}", "inst.stage2=hd:LABEL=#{iso_volume_label}", 'inst.text', *consoles]
+                     else
+                       [
+                         'auto=true', 'priority=critical',
+                         "preseed/url=#{preseed_url}",
+                         'grub-installer/force-efi-extra-removable=true',
+                         *consoles,
+                         '---'
+                       ]
+                     end
       builder.extra_args('-kernel', @kernel_path, '-initrd', @initrd_path,
                          '-append', append_parts.join(' '))
 
@@ -475,6 +493,8 @@ module Pim
       ssh.execute('find /var/log -type f -exec truncate -s 0 {} \\; 2>/dev/null || true', sudo: true)
       ssh.execute('rm -f /etc/ssh/ssh_host_*', sudo: true)
       ssh.execute('ssh-keygen -A', sudo: true)
+      # SELinux (Fedora): keys created from an SSH session get the wrong label and sshd can't read them
+      ssh.execute('restorecon -R /etc/ssh 2>/dev/null || true', sudo: true)
 
       # Verify SSH will work on next boot
       result = ssh.execute('sshd -t 2>&1', sudo: true)

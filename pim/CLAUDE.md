@@ -228,6 +228,12 @@ Files match profile name with fallback to `default`:
 - `resources/preseeds/developer.cfg.erb` → fallback `resources/preseeds/default.cfg.erb`
 - `resources/scripts/developer.sh` → fallback `resources/scripts/default.sh`
 - `resources/verifications/developer.sh` → fallback `resources/verifications/default.sh`
+- `resources/kickstarts/fedora.ks.erb` → fallback `resources/kickstarts/default.ks.erb` (builds with `automation: kickstart`, inferred from `distro: fedora`)
+
+Provisioning scripts are looked up per distro first: `resources/scripts/<distro>/base.sh` → `resources/scripts/base.sh`.
+
+### Kickstart builds
+Same pipeline as preseed; `LocalBuilder` branches on `build.automation`: kernel/initrd from `images/pxeboot/`, boot args `inst.ks=http://…/ks.cfg inst.stage2=hd:LABEL=<ISO volume label> inst.text`, and the server serves `/ks.cfg`. The kickstart must end with `poweroff` (pim waits for the installer VM to exit) and give the SSH user NOPASSWD sudo.
 
 ### Context-Aware Exit
 Commands use `Pim.exit!` instead of `exit`. In CLI mode it exits the process. In console mode (`pim console`) it raises `Pim::CommandError` so the REPL stays alive.

@@ -9,15 +9,16 @@ module Pim
       @project_dir = Pathname(project_dir)
     end
 
-    # Find script by name (follows naming convention with fallback)
-    def find_script(name)
-      find_file(SCRIPTS_DIR, "#{name}.sh")
+    # Find script by name: resources/scripts/<distro>/<name>.sh first, then resources/scripts/<name>.sh
+    def find_script(name, distro: nil)
+      (distro && find_file(File.join(SCRIPTS_DIR, distro), "#{name}.sh")) ||
+        find_file(SCRIPTS_DIR, "#{name}.sh")
     end
 
     # Resolve list of script names to paths
-    def resolve_scripts(script_names)
+    def resolve_scripts(script_names, distro: nil)
       script_names.map do |name|
-        path = find_script(name)
+        path = find_script(name, distro: distro)
         raise "Script not found: #{name}.sh" unless path
 
         path

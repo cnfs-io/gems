@@ -98,8 +98,10 @@ module Pim
 
   # WEBrick server for serving preseed and post-install scripts
   class Server
-    def initialize(profile:, port: 8080, verbose: false, debug: false, preseed_name: nil, install_name: nil, trap_signals: true)
+    def initialize(profile:, port: 8080, verbose: false, debug: false, preseed_name: nil, install_name: nil,
+                   automation: 'preseed', trap_signals: true)
       @profile = profile
+      @automation = automation
       @trap_signals = trap_signals
       @port = port
       @verbose = verbose
@@ -110,7 +112,7 @@ module Pim
     end
 
     def start
-      preseed_path = '/preseed.cfg'
+      preseed_path = kickstart? ? '/ks.cfg' : '/preseed.cfg'
       install_path = '/install.sh'
 
       install_content = read_file(@profile.install_template(@install_name))
@@ -118,17 +120,18 @@ module Pim
       bindings = @profile.to_h.transform_keys(&:to_sym)
       bindings[:install_url] = "http://#{@ip}:#{@port}#{install_path}" if install_content
 
-      preseed_content = render_template(@profile.preseed_template(@preseed_name), bindings)
+      template = kickstart? ? @profile.kickstart_template(@preseed_name) : @profile.preseed_template(@preseed_name)
+      preseed_content = render_template(template, bindings)
 
-      puts "Serving preseed configuration for profile: #{@profile.name}"
+      puts "Serving #{@automation} configuration for profile: #{@profile.name}"
       puts
-      puts "Preseed URL:      http://#{@ip}:#{@port}#{preseed_path}"
+      puts "Config URL:       http://#{@ip}:#{@port}#{preseed_path}"
       puts "Install URL:      http://#{@ip}:#{@port}#{install_path}" if install_content
       puts
 
       if @debug
         puts '=' * 60
-        puts "preseed.cfg:"
+        puts "#{File.basename(preseed_path)}:"
         puts '=' * 60
         puts preseed_content
         puts
@@ -142,7 +145,11 @@ module Pim
       end
 
       puts "Boot parameters:"
-      puts "  auto=true priority=critical preseed/url=http://#{@ip}:#{@port}#{preseed_path}"
+      if kickstart?
+        puts "  inst.ks=http://#{@ip}:#{@port}#{preseed_path}"
+      else
+        puts "  auto=true priority=critical preseed/url=http://#{@ip}:#{@port}#{preseed_path}"
+      end
       puts
       puts "Press Ctrl+C to stop"
       puts
@@ -176,6 +183,10 @@ module Pim
     end
 
     private
+
+    def kickstart?
+      @automation == 'kickstart'
+    end
 
     def render_template(template_path, bindings = nil)
       return nil unless template_path && File.exist?(template_path)

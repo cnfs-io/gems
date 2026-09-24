@@ -46,7 +46,7 @@ module Pim
 
       # Resolve scripts
       script_names = profile_data['scripts'] || %w[base finalize]
-      scripts = resolve_scripts(script_names)
+      scripts = resolve_scripts(script_names, distro: build.distro)
 
       # Calculate cache key
       cache_key = @cache.cache_key(
@@ -147,7 +147,7 @@ module Pim
       # Resolve scripts
       script_names = profile_data['scripts'] || %w[base finalize]
       begin
-        scripts = resolve_scripts(script_names)
+        scripts = resolve_scripts(script_names, distro: build.distro)
       rescue StandardError => e
         puts "Warning: #{e.message}"
         scripts = []
@@ -240,8 +240,8 @@ module Pim
       end
     end
 
-    def resolve_scripts(script_names)
-      @script_loader.resolve_scripts(script_names)
+    def resolve_scripts(script_names, distro: nil)
+      @script_loader.resolve_scripts(script_names, distro: distro)
     end
 
     def local_build(build:, profile:, profile_name:, arch:, iso_key:, iso_path:, cache_key:, scripts:,

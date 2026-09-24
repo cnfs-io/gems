@@ -139,6 +139,18 @@ RSpec.describe Pim::Profile do
       end
     end
 
+    describe "#kickstart_template" do
+      it "finds kickstart template by profile name, falling back to default" do
+        kickstarts_dir = File.join(project_dir, "resources", "kickstarts")
+        profile = described_class.find("developer")
+        expect(profile.kickstart_template).to eq(File.join(kickstarts_dir, "default.ks.erb"))
+
+        template_path = File.join(kickstarts_dir, "developer.ks.erb")
+        File.write(template_path, "kickstart content")
+        expect(profile.kickstart_template).to eq(template_path)
+      end
+    end
+
     describe "#install_template" do
       it "finds install template by profile name" do
         installs_dir = File.join(project_dir, "resources", "post_installs")

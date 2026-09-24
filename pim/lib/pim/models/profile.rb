@@ -88,6 +88,12 @@ module Pim
         (name != 'default' && find_template('resources/preseeds', 'default.cfg.erb'))
     end
 
+    def kickstart_template(name = nil)
+      name ||= id
+      find_template('resources/kickstarts', "#{name}.ks.erb") ||
+        (name != 'default' && find_template('resources/kickstarts', 'default.ks.erb'))
+    end
+
     def install_template(name = nil)
       name ||= id
       find_template('resources/post_installs', "#{name}.sh") ||
